@@ -199,7 +199,10 @@ export async function POST(request: Request) {
   }
 
   if (validationErrors.length > 0) {
-    return NextResponse.json({ errors: validationErrors }, { status: 400 });
+    return NextResponse.json(
+      { error: "행별 오류를 확인해 주세요.", errors: validationErrors },
+      { status: 400 },
+    );
   }
 
   if (rowsToUpsert.length === 0) {
