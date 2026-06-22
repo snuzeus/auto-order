@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
 type AdminStatus = {
   orderDate: string;
@@ -24,6 +24,17 @@ type AdminStatus = {
 
 type StatusResponse = AdminStatus & {
   error?: string;
+};
+
+type UploadValidationError = {
+  rowNumber: number;
+  reason: string;
+};
+
+type UploadResponse = {
+  importedCount?: number;
+  error?: string;
+  errors?: UploadValidationError[];
 };
 
 const FOCUS_VISIBLE_CLASS =
@@ -67,19 +78,18 @@ export default function AdminDashboard() {
   const [notice, setNotice] = useState("");
   const [actionMode, setActionMode] = useState<"none" | "close" | "cancel">("none");
   const [actionPending, setActionPending] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadPending, setUploadPending] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const [uploadNotice, setUploadNotice] = useState("");
+  const [uploadRowErrors, setUploadRowErrors] = useState<UploadValidationError[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const orderDate = useMemo(() => todayYmd(), []);
   const isClosedDay = status?.branchStatuses.some((branch) => branch.status === "closed") ?? false;
   const hasSummaryData = (status?.summary.totalItemCount ?? 0) > 0;
-  const canStartClose =
-    Boolean(status) &&
-    !loading &&
-    !actionPending &&
-    !isClosedDay &&
-    hasSummaryData;
-  const canConfirmClose =
-    canStartClose &&
-    (status?.summary.unresolvedItemCount ?? 0) === 0;
+  const canStartClose = Boolean(status) && !loading && !actionPending && !isClosedDay && hasSummaryData;
+  const canConfirmClose = canStartClose && (status?.summary.unresolvedItemCount ?? 0) === 0;
   const canStartCancel = Boolean(status) && !loading && !actionPending && isClosedDay;
   const canDownloadZip = Boolean(status) && !loading && isClosedDay;
   const downloadHref = `/api/admin/excel?date=${encodeURIComponent(orderDate)}`;
@@ -109,9 +119,7 @@ export default function AdminDashboard() {
       }
 
       setStatus(null);
-      setError(
-        loadError instanceof Error ? loadError.message : "관리자 현황을 불러오지 못했습니다.",
-      );
+      setError(loadError instanceof Error ? loadError.message : "관리자 현황을 불러오지 못했습니다.");
     } finally {
       if (!signal?.aborted) {
         setLoading(false);
@@ -160,6 +168,65 @@ export default function AdminDashboard() {
     }
   }
 
+  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const nextFile = event.target.files?.[0] ?? null;
+
+    setUploadFile(nextFile);
+    setUploadError("");
+    setUploadNotice("");
+    setUploadRowErrors([]);
+  }
+
+  async function handleUploadSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!uploadFile) {
+      setUploadError("업로드할 엑셀 파일을 선택해 주세요.");
+      setUploadNotice("");
+      setUploadRowErrors([]);
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", uploadFile);
+
+    setUploadPending(true);
+    setUploadError("");
+    setUploadNotice("");
+    setUploadRowErrors([]);
+
+    try {
+      const response = await fetch("/api/admin/products/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const data = (await response.json()) as UploadResponse;
+
+      if (!response.ok) {
+        if (Array.isArray(data.errors) && data.errors.length > 0) {
+          setUploadRowErrors(data.errors);
+          throw new Error("행별 오류를 확인해 주세요.");
+        }
+
+        throw new Error(data.error ?? "상품 마스터 업로드에 실패했습니다.");
+      }
+
+      setUploadNotice(`${data.importedCount ?? 0}건의 상품 마스터를 반영했습니다.`);
+      setUploadFile(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    } catch (uploadRequestError) {
+      setUploadError(
+        uploadRequestError instanceof Error
+          ? uploadRequestError.message
+          : "상품 마스터 업로드에 실패했습니다.",
+      );
+    } finally {
+      setUploadPending(false);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950">
       <section className="mx-auto flex max-w-6xl flex-col gap-4">
@@ -179,6 +246,68 @@ export default function AdminDashboard() {
             {error}
           </p>
         ) : null}
+
+        <section className="rounded-lg bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="m-0 text-2xl font-bold">상품 마스터 업로드</h2>
+              <p className="mt-2 text-sm text-slate-600">
+                엑셀 파일로 상품 바코드, 상품명, 거래처, 단가를 한 번에 반영합니다.
+              </p>
+            </div>
+            {uploadFile ? (
+              <p className="m-0 text-sm text-slate-600">선택한 파일: {uploadFile.name}</p>
+            ) : null}
+          </div>
+
+          <form className="mt-4 flex flex-col gap-3 md:flex-row md:items-end" onSubmit={handleUploadSubmit}>
+            <div className="flex-1">
+              <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="product-master-file">
+                업로드 파일
+              </label>
+              <input
+                ref={fileInputRef}
+                accept=".xlsx,.xlsm,.xls"
+                className={`block w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm text-slate-900 file:mr-4 file:rounded-md file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white ${FOCUS_VISIBLE_CLASS}`}
+                disabled={uploadPending}
+                id="product-master-file"
+                name="file"
+                type="file"
+                onChange={handleFileChange}
+              />
+            </div>
+            <button
+              className={`min-h-12 rounded-lg bg-slate-900 px-5 py-3 text-base font-bold text-white disabled:bg-slate-300 ${FOCUS_VISIBLE_CLASS}`}
+              disabled={uploadPending || !uploadFile}
+              type="submit"
+            >
+              {uploadPending ? "업로드 중..." : "상품 마스터 반영"}
+            </button>
+          </form>
+
+          {uploadNotice ? (
+            <p className="mt-4 rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-900">
+              {uploadNotice}
+            </p>
+          ) : null}
+          {uploadError ? (
+            <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+              {uploadError}
+            </p>
+          ) : null}
+          {uploadRowErrors.length > 0 ? (
+            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-900">
+              <h3 className="m-0 text-base font-semibold">업로드 오류</h3>
+              <ul className="mt-3 list-disc space-y-2 pl-5">
+                {uploadRowErrors.map((rowError) => (
+                  <li key={`${rowError.rowNumber}-${rowError.reason}`}>
+                    {rowError.rowNumber}행: {rowError.reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </section>
 
         {loading ? (
           <div className="rounded-lg bg-white p-6 shadow-sm">
@@ -253,7 +382,7 @@ export default function AdminDashboard() {
                     className={`flex min-h-14 flex-1 items-center justify-center border border-slate-300 bg-white px-5 py-4 text-center text-lg font-bold text-slate-900 ${FOCUS_VISIBLE_CLASS}`}
                     href={downloadHref}
                   >
-                    납품처 ZIP 다운로드
+                    공급처 ZIP 다운로드
                   </a>
                 ) : (
                   <button
@@ -262,16 +391,18 @@ export default function AdminDashboard() {
                     disabled
                     type="button"
                   >
-                    납품처 ZIP 다운로드
+                    공급처 ZIP 다운로드
                   </button>
                 )}
               </div>
               {!hasSummaryData ? (
-                <p className="mt-3 text-sm text-slate-600">제출된 주문이 있어야 마감을 진행할 수 있습니다.</p>
+                <p className="mt-3 text-sm text-slate-600">
+                  제출된 주문이 없어 마감을 진행할 수 없습니다.
+                </p>
               ) : null}
               {!isClosedDay ? (
                 <p className="mt-3 text-sm text-slate-600">
-                  납품처 ZIP은 마감이 완료된 뒤에 다운로드할 수 있습니다.
+                  공급처 ZIP은 마감이 완료된 뒤에 다운로드할 수 있습니다.
                 </p>
               ) : null}
             </div>
@@ -281,27 +412,27 @@ export default function AdminDashboard() {
                 <h2 className="m-0 text-2xl font-bold text-red-800">오늘 주문 마감 전 확인</h2>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   <p className="m-0 rounded-lg bg-slate-50 px-4 py-3 text-base">
-                    조회일: <strong>{status.orderDate}</strong>
+                    조회일 <strong>{status.orderDate}</strong>
                   </p>
                   <p className="m-0 rounded-lg bg-slate-50 px-4 py-3 text-base">
-                    미제출 지점 수: <strong>{status.summary.unsubmittedBranchNames.length}</strong>
+                    미제출 지점 수 <strong>{status.summary.unsubmittedBranchNames.length}</strong>
                   </p>
                   <p className="m-0 rounded-lg bg-slate-50 px-4 py-3 text-base">
-                    총 품목 수: <strong>{status.summary.totalItemCount}</strong>
+                    총 품목 수 <strong>{status.summary.totalItemCount}</strong>
                   </p>
                   <p className="m-0 rounded-lg bg-slate-50 px-4 py-3 text-base">
-                    총 수량: <strong>{status.summary.totalQuantity}</strong>
+                    총 수량 <strong>{status.summary.totalQuantity}</strong>
                   </p>
                   <p className="m-0 rounded-lg bg-slate-50 px-4 py-3 text-base">
-                    공급처 수: <strong>{status.summary.supplierCount}</strong>
+                    공급처 수 <strong>{status.summary.supplierCount}</strong>
                   </p>
                   <p className="m-0 rounded-lg bg-slate-50 px-4 py-3 text-base">
-                    공급처 미확정: <strong>{status.summary.unresolvedItemCount}</strong>
+                    공급처 미확정 <strong>{status.summary.unresolvedItemCount}</strong>
                   </p>
                 </div>
                 <div className="mt-4 rounded-lg bg-amber-50 px-4 py-4 text-base text-amber-900">
                   <p className="m-0 font-semibold">미제출 지점</p>
-                  <p className="mt-2 m-0">
+                  <p className="m-0 mt-2">
                     {status.summary.unsubmittedBranchNames.length > 0
                       ? status.summary.unsubmittedBranchNames.join(", ")
                       : "없음"}
@@ -337,7 +468,7 @@ export default function AdminDashboard() {
               <div className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm">
                 <h2 className="m-0 text-2xl font-bold">마감 취소 확인</h2>
                 <p className="mt-4 text-base text-slate-700">
-                  {status.orderDate} 마감을 취소하면 닫힌 주문이 다시 제출 상태로 돌아갑니다.
+                  {status.orderDate} 마감을 취소하면 지점 주문이 다시 제출 상태로 돌아갑니다.
                 </p>
                 <div className="mt-4 flex flex-col gap-3 sm:flex-row">
                   <button
