@@ -69,6 +69,9 @@ begin
 end;
 $$;
 
+revoke execute on function public.close_orders_for_date(date, uuid) from public, anon, authenticated;
+grant execute on function public.close_orders_for_date(date, uuid) to service_role;
+
 create or replace function public.cancel_closing_for_date(
   p_order_date date,
   p_admin_id uuid
@@ -111,3 +114,6 @@ begin
   return v_closing_batch_id;
 end;
 $$;
+
+revoke execute on function public.cancel_closing_for_date(date, uuid) from public, anon, authenticated;
+grant execute on function public.cancel_closing_for_date(date, uuid) to service_role;
