@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { buildSubmitBranchOrderItems } from "@/lib/domain/branch-order-draft";
 import { submitOrderSchema } from "@/lib/schemas";
 import { createServiceClient } from "@/lib/supabase/service";
 import type { OrderItemDraft, OrderStatus } from "@/lib/types";
@@ -24,6 +25,17 @@ type OrderItemRow = {
   memo: string | null;
 };
 
+type SubmitBranchOrderRpcRow = {
+  order_id: string;
+  status: OrderStatus;
+  branch_id: string;
+  order_date: string;
+};
+
+function jsonError(message: string, status: number) {
+  return NextResponse.json({ error: message }, { status });
+}
+
 function mapOrderItem(row: OrderItemRow): OrderItemDraft {
   return {
     productId: row.product_id ?? undefined,
@@ -38,15 +50,28 @@ function mapOrderItem(row: OrderItemRow): OrderItemDraft {
   };
 }
 
+function formatOrderApiError(message: string | undefined, fallback: string): string {
+  if (!message) {
+    return fallback;
+  }
+
+  if (
+    message.includes("선택한 지사를 찾을 수 없습니다.") ||
+    message.includes("이미 마감된 주문이라 수정할 수 없습니다.") ||
+    message.includes("주문 항목 형식이 올바르지 않습니다.")
+  ) {
+    return message;
+  }
+
+  return fallback;
+}
+
 export async function GET(request: NextRequest) {
   const branchId = request.nextUrl.searchParams.get("branchId")?.trim() ?? "";
   const orderDate = request.nextUrl.searchParams.get("orderDate")?.trim() ?? "";
 
   if (!branchId || !orderDate) {
-    return NextResponse.json(
-      { error: "branchId and orderDate are required" },
-      { status: 400 },
-    );
+    return jsonError("지사와 주문일을 함께 보내 주세요.", 400);
   }
 
   const supabase = createServiceClient();
@@ -60,7 +85,7 @@ export async function GET(request: NextRequest) {
     .maybeSingle();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return jsonError("주문 정보를 불러오지 못했습니다.", 500);
   }
 
   const order = data as OrderRow | null;
@@ -79,106 +104,63 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const parsed = submitOrderSchema.safeParse(await request.json());
+  let body: unknown;
+
+  try {
+    body = await request.json();
+  } catch {
+    return jsonError("요청 본문이 올바른 JSON 형식이 아닙니다.", 400);
+  }
+
+  const parsed = submitOrderSchema.safeParse(body);
 
   if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+    return jsonError("주문 입력값이 올바르지 않습니다.", 400);
   }
 
   const { branchId, orderDate, items } = parsed.data;
   const submittedItems = items.filter((item) => item.quantity > 0);
   const supabase = createServiceClient();
 
-  const { data: branch, error: branchError } = await supabase
-    .from("branches")
-    .select("id")
-    .eq("id", branchId)
-    .eq("is_active", true)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc("submit_branch_order", {
+    p_branch_id: branchId,
+    p_order_date: orderDate,
+    p_items: buildSubmitBranchOrderItems(items),
+  });
 
-  if (branchError) {
-    return NextResponse.json({ error: branchError.message }, { status: 500 });
-  }
-
-  if (!branch) {
-    return NextResponse.json({ error: "선택한 지사를 찾을 수 없습니다." }, { status: 404 });
-  }
-
-  const { data: existingOrder, error: existingOrderError } = await supabase
-    .from("orders")
-    .select("id, status")
-    .eq("branch_id", branchId)
-    .eq("order_date", orderDate)
-    .maybeSingle();
-
-  if (existingOrderError) {
-    return NextResponse.json({ error: existingOrderError.message }, { status: 500 });
-  }
-
-  if (existingOrder?.status === "closed") {
-    return NextResponse.json(
-      { error: "이미 마감된 주문이라 수정할 수 없습니다." },
-      { status: 409 },
+  if (error) {
+    const normalizedError = formatOrderApiError(
+      error.message,
+      "주문 저장 중 오류가 발생했습니다.",
     );
-  }
 
-  const now = new Date().toISOString();
-  const orderPayload = {
-    branch_id: branchId,
-    order_date: orderDate,
-    status: "submitted" as const,
-    submitted_at: now,
-    updated_at: now,
-  };
-
-  const { data: savedOrder, error: upsertError } = await supabase
-    .from("orders")
-    .upsert(orderPayload, { onConflict: "branch_id,order_date" })
-    .select("id, status, branch_id, order_date")
-    .single();
-
-  if (upsertError) {
-    return NextResponse.json({ error: upsertError.message }, { status: 500 });
-  }
-
-  const order = savedOrder as OrderRow;
-
-  const { error: deleteError } = await supabase
-    .from("order_items")
-    .delete()
-    .eq("order_id", order.id);
-
-  if (deleteError) {
-    return NextResponse.json({ error: deleteError.message }, { status: 500 });
-  }
-
-  if (submittedItems.length > 0) {
-    const itemRows = submittedItems.map((item) => ({
-      order_id: order.id,
-      product_id: item.productId ?? null,
-      barcode: item.barcode,
-      product_code: item.productCode ?? null,
-      product_name: item.productName,
-      spec: item.spec,
-      supplier_name: item.supplierName ?? null,
-      quantity: item.quantity,
-      is_unregistered: item.isUnregistered,
-      memo: item.memo ?? null,
-    }));
-
-    const { error: insertError } = await supabase.from("order_items").insert(itemRows);
-
-    if (insertError) {
-      return NextResponse.json({ error: insertError.message }, { status: 500 });
+    if (normalizedError === "선택한 지사를 찾을 수 없습니다.") {
+      return jsonError(normalizedError, 404);
     }
+
+    if (normalizedError === "이미 마감된 주문이라 수정할 수 없습니다.") {
+      return jsonError(normalizedError, 409);
+    }
+
+    if (normalizedError === "주문 항목 형식이 올바르지 않습니다.") {
+      return jsonError(normalizedError, 400);
+    }
+
+    return jsonError(normalizedError, 500);
+  }
+
+  const savedOrder = (Array.isArray(data) ? data[0] : data) as SubmitBranchOrderRpcRow | null;
+
+  if (!savedOrder) {
+    return jsonError("주문 저장 결과를 확인할 수 없습니다.", 500);
   }
 
   return NextResponse.json({
     order: {
-      id: order.id,
-      status: "submitted" as const,
-      branchId: order.branch_id,
-      orderDate: order.order_date,
+      id: savedOrder.order_id,
+      status: savedOrder.status,
+      branchId: savedOrder.branch_id,
+      orderDate: savedOrder.order_date,
       items: submittedItems,
     },
   });

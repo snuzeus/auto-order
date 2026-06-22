@@ -116,6 +116,119 @@ as $$
   );
 $$;
 
+create or replace function public.submit_branch_order(
+  p_branch_id uuid,
+  p_order_date date,
+  p_items jsonb
+)
+returns table (
+  order_id uuid,
+  status order_status,
+  branch_id uuid,
+  order_date date
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_order public.orders%rowtype;
+  v_now timestamptz := now();
+begin
+  if p_items is null or jsonb_typeof(p_items) <> 'array' then
+    raise exception '주문 항목 형식이 올바르지 않습니다.';
+  end if;
+
+  perform 1
+  from public.branches
+  where id = p_branch_id
+    and is_active = true;
+
+  if not found then
+    raise exception '선택한 지사를 찾을 수 없습니다.';
+  end if;
+
+  select *
+  into v_order
+  from public.orders
+  where branch_id = p_branch_id
+    and order_date = p_order_date
+  for update;
+
+  if found and v_order.status = 'closed' then
+    raise exception '이미 마감된 주문이라 수정할 수 없습니다.';
+  end if;
+
+  insert into public.orders (
+    branch_id,
+    order_date,
+    status,
+    submitted_at,
+    updated_at
+  )
+  values (
+    p_branch_id,
+    p_order_date,
+    'submitted',
+    v_now,
+    v_now
+  )
+  on conflict (branch_id, order_date)
+  do update
+  set status = 'submitted',
+      submitted_at = excluded.submitted_at,
+      updated_at = excluded.updated_at
+  returning *
+  into v_order;
+
+  delete from public.order_items
+  where order_id = v_order.id;
+
+  insert into public.order_items (
+    order_id,
+    product_id,
+    barcode,
+    product_code,
+    product_name,
+    spec,
+    supplier_name,
+    quantity,
+    is_unregistered,
+    memo
+  )
+  select
+    v_order.id,
+    item.product_id,
+    item.barcode,
+    item.product_code,
+    item.product_name,
+    coalesce(item.spec, ''),
+    item.supplier_name,
+    item.quantity,
+    coalesce(item.is_unregistered, false),
+    item.memo
+  from jsonb_to_recordset(p_items) as item(
+    product_id uuid,
+    barcode text,
+    product_code text,
+    product_name text,
+    spec text,
+    supplier_name text,
+    quantity integer,
+    is_unregistered boolean,
+    memo text
+  )
+  where coalesce(item.quantity, 0) > 0;
+
+  return query
+  select
+    v_order.id,
+    v_order.status,
+    v_order.branch_id,
+    v_order.order_date;
+end;
+$$;
+
 create policy "public read active branches"
 on branches
 for select

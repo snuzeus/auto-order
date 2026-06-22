@@ -1,9 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import { calculateOrderTotals } from "@/lib/domain/order-totals";
+import {
+  hasDraftDifferences,
+  restoreBranchDraft,
+  shouldPersistBranchDraft,
+} from "@/lib/domain/branch-order-draft";
 import { upsertOrderItem } from "@/lib/domain/branch-order-state";
+import { calculateOrderTotals } from "@/lib/domain/order-totals";
 import type { Branch, OrderItemDraft, OrderStatus, Product } from "@/lib/types";
 
 type BranchResponse = {
@@ -28,6 +33,8 @@ type OrderResponse = {
 };
 
 const BRANCH_STORAGE_KEY = "auto-order-branch-id";
+const FOCUS_VISIBLE_CLASS =
+  "focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2";
 
 function todayYmd(): string {
   const now = new Date();
@@ -72,9 +79,19 @@ export default function BranchOrderApp() {
   const [submitError, setSubmitError] = useState("");
   const [submitNotice, setSubmitNotice] = useState("");
   const [confirmingSubmit, setConfirmingSubmit] = useState(false);
+  const submitRequestIdRef = useRef(0);
+  const contextRef = useRef({ branchId: "", orderDate });
+
+  useEffect(() => {
+    contextRef.current = {
+      branchId: selectedBranchId,
+      orderDate,
+    };
+  }, [orderDate, selectedBranchId]);
 
   useEffect(() => {
     const storedBranchId = window.localStorage.getItem(BRANCH_STORAGE_KEY) ?? "";
+
     if (storedBranchId) {
       setSelectedBranchId(storedBranchId);
     }
@@ -144,27 +161,26 @@ export default function BranchOrderApp() {
         }
 
         const serverItems = data.order?.items ?? [];
+        const nextOrderStatus = data.order?.status ?? "not_submitted";
+        const storageKey = draftStorageKey(selectedBranchId, orderDate);
+        const restoredDraft = restoreBranchDraft(
+          window.localStorage.getItem(storageKey),
+          serverItems,
+        );
+        const useRestoredDraft = shouldPersistBranchDraft({
+          items: restoredDraft.items,
+          syncedItems: serverItems,
+          orderStatus: nextOrderStatus,
+        });
+
         setSyncedItems(serverItems);
+        setOrderStatus(nextOrderStatus);
 
-        const localDraftRaw = window.localStorage.getItem(draftStorageKey(selectedBranchId, orderDate));
-        let localDraft: OrderItemDraft[] | null = null;
-
-        if (localDraftRaw) {
-          try {
-            const parsedDraft = JSON.parse(localDraftRaw) as unknown;
-            localDraft = Array.isArray(parsedDraft) ? (parsedDraft as OrderItemDraft[]) : null;
-          } catch {
-            localDraft = null;
-          }
+        if (restoredDraft.shouldClearStorage || !useRestoredDraft) {
+          window.localStorage.removeItem(storageKey);
         }
 
-        if (localDraft && Array.isArray(localDraft) && localDraft.length > 0) {
-          setItems(localDraft);
-          setOrderStatus(data.order?.status ?? "not_submitted");
-        } else {
-          setItems(serverItems);
-          setOrderStatus(data.order?.status ?? "not_submitted");
-        }
+        setItems(useRestoredDraft ? restoredDraft.items : serverItems);
       } catch (error) {
         if (controller.signal.aborted) {
           return;
@@ -190,16 +206,20 @@ export default function BranchOrderApp() {
       return;
     }
 
-    if (items.length === 0) {
-      window.localStorage.removeItem(draftStorageKey(selectedBranchId, orderDate));
+    const storageKey = draftStorageKey(selectedBranchId, orderDate);
+    const shouldPersist = shouldPersistBranchDraft({
+      items,
+      syncedItems,
+      orderStatus,
+    });
+
+    if (shouldPersist) {
+      window.localStorage.setItem(storageKey, JSON.stringify(items));
       return;
     }
 
-    window.localStorage.setItem(
-      draftStorageKey(selectedBranchId, orderDate),
-      JSON.stringify(items),
-    );
-  }, [items, orderDate, selectedBranchId]);
+    window.localStorage.removeItem(storageKey);
+  }, [items, orderDate, orderStatus, selectedBranchId, syncedItems]);
 
   useEffect(() => {
     const trimmedQuery = query.trim();
@@ -252,7 +272,7 @@ export default function BranchOrderApp() {
   const selectedBranch = branches.find((branch) => branch.id === selectedBranchId) ?? null;
   const totals = useMemo(() => calculateOrderTotals(items), [items]);
   const hasPendingDraft = hasActiveItems(items);
-  const isDirty = JSON.stringify(items) !== JSON.stringify(syncedItems);
+  const isDirty = hasDraftDifferences(items, syncedItems);
   const isClosed = orderStatus === "closed";
   const canSubmit =
     Boolean(selectedBranchId) &&
@@ -262,10 +282,26 @@ export default function BranchOrderApp() {
     !isClosed &&
     !orderLoading;
   const showManualForm =
-    searchTouched && query.trim() !== "" && !searchLoading && !searchError && searchResults.length === 0;
+    searchTouched &&
+    query.trim() !== "" &&
+    !searchLoading &&
+    !searchError &&
+    searchResults.length === 0;
+
+  function resetEntryFields() {
+    setQuery("");
+    setSearchResults([]);
+    setSearchTouched(false);
+    setProductQuantities({});
+    setManualBarcode("");
+    setManualName("");
+    setManualSpec("");
+    setManualQuantity(1);
+    setManualMemo("");
+  }
 
   function handleBranchChange(nextBranchId: string) {
-    if (nextBranchId === selectedBranchId) {
+    if (submitPending || nextBranchId === selectedBranchId) {
       return;
     }
 
@@ -286,13 +322,7 @@ export default function BranchOrderApp() {
     setSubmitError("");
     setSubmitNotice("");
     setConfirmingSubmit(false);
-    setQuery("");
-    setSearchResults([]);
-    setSearchTouched(false);
-    setManualBarcode("");
-    setManualName("");
-    setManualSpec("");
-    setManualMemo("");
+    resetEntryFields();
     setSelectedBranchId(nextBranchId);
     window.localStorage.setItem(BRANCH_STORAGE_KEY, nextBranchId);
   }
@@ -341,20 +371,14 @@ export default function BranchOrderApp() {
     };
 
     setItems((currentItems) => upsertOrderItem(currentItems, nextItem));
-    setQuery("");
-    setSearchResults([]);
-    setSearchTouched(false);
-    setManualBarcode("");
-    setManualName("");
-    setManualSpec("");
-    setManualQuantity(1);
-    setManualMemo("");
     setSubmitError("");
     setSubmitNotice("");
+    resetEntryFields();
   }
 
   function updateItemQuantity(barcode: string, quantity: number) {
     const item = items.find((entry) => entry.barcode === barcode);
+
     if (!item) {
       return;
     }
@@ -375,6 +399,11 @@ export default function BranchOrderApp() {
       return;
     }
 
+    const submitBranchId = selectedBranchId;
+    const submitOrderDate = orderDate;
+    const requestId = submitRequestIdRef.current + 1;
+    submitRequestIdRef.current = requestId;
+
     setSubmitPending(true);
     setSubmitError("");
     setSubmitNotice("");
@@ -386,8 +415,8 @@ export default function BranchOrderApp() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          branchId: selectedBranchId,
-          orderDate,
+          branchId: submitBranchId,
+          orderDate: submitOrderDate,
           items,
         }),
       });
@@ -398,19 +427,36 @@ export default function BranchOrderApp() {
         throw new Error(data.error ?? "주문 제출에 실패했습니다.");
       }
 
+      const isStaleResponse =
+        submitRequestIdRef.current !== requestId ||
+        contextRef.current.branchId !== submitBranchId ||
+        contextRef.current.orderDate !== submitOrderDate;
+
+      if (isStaleResponse) {
+        return;
+      }
+
       const submittedItems = data.order?.items ?? items.filter((item) => item.quantity > 0);
       setItems(submittedItems);
       setSyncedItems(submittedItems);
-      setOrderStatus("submitted");
+      setOrderStatus(data.order?.status ?? "submitted");
       setConfirmingSubmit(false);
       setSubmitNotice("주문이 제출되었습니다.");
-      window.localStorage.removeItem(draftStorageKey(selectedBranchId, orderDate));
+      window.localStorage.removeItem(draftStorageKey(submitBranchId, submitOrderDate));
     } catch (error) {
+      const isLatestRequest = submitRequestIdRef.current === requestId;
+
+      if (!isLatestRequest) {
+        return;
+      }
+
       setSubmitError(
         error instanceof Error ? error.message : "주문 제출에 실패했습니다.",
       );
     } finally {
-      setSubmitPending(false);
+      if (submitRequestIdRef.current === requestId) {
+        setSubmitPending(false);
+      }
     }
   }
 
@@ -440,8 +486,8 @@ export default function BranchOrderApp() {
           </label>
           <select
             id="branch-select"
-            className="w-full border border-slate-300 px-4 py-4 text-lg focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
-            disabled={branchesLoading}
+            className={`w-full border border-slate-300 px-4 py-4 text-lg ${FOCUS_VISIBLE_CLASS}`}
+            disabled={branchesLoading || submitPending}
             value={selectedBranchId}
             onChange={(event) => handleBranchChange(event.target.value)}
           >
@@ -452,7 +498,9 @@ export default function BranchOrderApp() {
               </option>
             ))}
           </select>
-          {branchesLoading ? <p className="mt-3 text-sm text-slate-600">지사 목록을 불러오는 중입니다.</p> : null}
+          {branchesLoading ? (
+            <p className="mt-3 text-sm text-slate-600">지사 목록을 불러오는 중입니다.</p>
+          ) : null}
           {!branchesLoading && branches.length === 0 ? (
             <p className="mt-3 text-sm text-slate-600">활성 지사가 없습니다.</p>
           ) : null}
@@ -480,7 +528,7 @@ export default function BranchOrderApp() {
           </label>
           <input
             id="product-search"
-            className="w-full border border-slate-300 px-4 py-4 text-lg focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
+            className={`w-full border border-slate-300 px-4 py-4 text-lg ${FOCUS_VISIBLE_CLASS}`}
             disabled={!selectedBranchId || isClosed}
             placeholder="예: 8801234567890 또는 생수"
             value={query}
@@ -494,19 +542,22 @@ export default function BranchOrderApp() {
           <p className="mt-2 text-sm text-slate-600">
             등록 상품이 없으면 아래에서 수기 상품으로 바로 추가할 수 있습니다.
           </p>
-          {isClosed ? <p className="mt-3 text-sm text-red-700">이미 마감된 주문은 수정할 수 없습니다.</p> : null}
-          {orderLoading ? <p className="mt-3 text-sm text-slate-600">기존 주문을 불러오는 중입니다.</p> : null}
+          {isClosed ? (
+            <p className="mt-3 text-sm text-red-700">이미 마감된 주문은 수정할 수 없습니다.</p>
+          ) : null}
+          {orderLoading ? (
+            <p className="mt-3 text-sm text-slate-600">기존 주문을 불러오는 중입니다.</p>
+          ) : null}
           {orderError ? <p className="mt-3 text-sm text-red-700">{orderError}</p> : null}
-          {searchLoading ? <p className="mt-3 text-sm text-slate-600">상품을 찾는 중입니다.</p> : null}
+          {searchLoading ? (
+            <p className="mt-3 text-sm text-slate-600">상품을 찾는 중입니다.</p>
+          ) : null}
           {searchError ? <p className="mt-3 text-sm text-red-700">{searchError}</p> : null}
 
           {searchResults.length > 0 ? (
             <div className="mt-4 flex flex-col gap-3">
               {searchResults.map((product) => (
-                <div
-                  key={product.id}
-                  className="rounded-lg border border-slate-200 p-4"
-                >
+                <div key={product.id} className="rounded-lg border border-slate-200 p-4">
                   <p className="m-0 text-lg font-semibold">{product.name}</p>
                   <p className="mt-1 text-sm text-slate-600">
                     바코드 {product.barcode} · 규격 {product.spec || "-"} · 납품처 {product.supplierName}
@@ -517,7 +568,7 @@ export default function BranchOrderApp() {
                     </label>
                     <input
                       id={`qty-${product.id}`}
-                      className="w-full border border-slate-300 px-4 py-3 text-lg sm:w-28"
+                      className={`w-full border border-slate-300 px-4 py-3 text-lg sm:w-28 ${FOCUS_VISIBLE_CLASS}`}
                       inputMode="numeric"
                       min={1}
                       step={1}
@@ -531,7 +582,7 @@ export default function BranchOrderApp() {
                       }
                     />
                     <button
-                      className="w-full bg-teal-700 px-5 py-4 text-lg font-semibold text-white focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 disabled:bg-slate-300 sm:w-auto"
+                      className={`w-full bg-teal-700 px-5 py-4 text-lg font-semibold text-white disabled:bg-slate-300 sm:w-auto ${FOCUS_VISIBLE_CLASS}`}
                       disabled={!selectedBranchId || isClosed}
                       type="button"
                       onClick={() => addRegisteredProduct(product)}
@@ -557,7 +608,7 @@ export default function BranchOrderApp() {
                   </label>
                   <input
                     id="manual-barcode"
-                    className="w-full border border-slate-300 px-4 py-4 text-lg"
+                    className={`w-full border border-slate-300 px-4 py-4 text-lg ${FOCUS_VISIBLE_CLASS}`}
                     value={manualBarcode}
                     onChange={(event) => setManualBarcode(event.target.value)}
                   />
@@ -568,7 +619,7 @@ export default function BranchOrderApp() {
                   </label>
                   <input
                     id="manual-name"
-                    className="w-full border border-slate-300 px-4 py-4 text-lg"
+                    className={`w-full border border-slate-300 px-4 py-4 text-lg ${FOCUS_VISIBLE_CLASS}`}
                     value={manualName}
                     onChange={(event) => setManualName(event.target.value)}
                   />
@@ -579,7 +630,7 @@ export default function BranchOrderApp() {
                   </label>
                   <input
                     id="manual-spec"
-                    className="w-full border border-slate-300 px-4 py-4 text-lg"
+                    className={`w-full border border-slate-300 px-4 py-4 text-lg ${FOCUS_VISIBLE_CLASS}`}
                     value={manualSpec}
                     onChange={(event) => setManualSpec(event.target.value)}
                   />
@@ -590,7 +641,7 @@ export default function BranchOrderApp() {
                   </label>
                   <input
                     id="manual-qty"
-                    className="w-full border border-slate-300 px-4 py-4 text-lg"
+                    className={`w-full border border-slate-300 px-4 py-4 text-lg ${FOCUS_VISIBLE_CLASS}`}
                     inputMode="numeric"
                     min={1}
                     step={1}
@@ -605,14 +656,14 @@ export default function BranchOrderApp() {
                   </label>
                   <textarea
                     id="manual-memo"
-                    className="w-full border border-slate-300 px-4 py-4 text-lg"
+                    className={`w-full border border-slate-300 px-4 py-4 text-lg ${FOCUS_VISIBLE_CLASS}`}
                     rows={3}
                     value={manualMemo}
                     onChange={(event) => setManualMemo(event.target.value)}
                   />
                 </div>
                 <button
-                  className="w-full bg-amber-500 px-5 py-4 text-lg font-semibold text-slate-950 focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 disabled:bg-slate-300"
+                  className={`w-full bg-amber-500 px-5 py-4 text-lg font-semibold text-slate-950 disabled:bg-slate-300 ${FOCUS_VISIBLE_CLASS}`}
                   disabled={!selectedBranchId || isClosed}
                   type="button"
                   onClick={addManualItem}
@@ -633,22 +684,21 @@ export default function BranchOrderApp() {
               {items
                 .filter((item) => item.quantity > 0)
                 .map((item) => (
-                  <div
-                    key={item.barcode}
-                    className="rounded-lg border border-slate-200 p-4"
-                  >
+                  <div key={item.barcode} className="rounded-lg border border-slate-200 p-4">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                       <div>
                         <p className="m-0 text-lg font-semibold">{item.productName}</p>
                         <p className="mt-1 text-sm text-slate-600">
                           {item.isUnregistered ? "수기 상품" : "등록 상품"} · {item.spec || "규격 없음"}
                         </p>
-                        {item.memo ? <p className="mt-1 text-sm text-slate-600">메모: {item.memo}</p> : null}
+                        {item.memo ? (
+                          <p className="mt-1 text-sm text-slate-600">메모: {item.memo}</p>
+                        ) : null}
                       </div>
                       <div className="flex items-center gap-2">
                         <button
                           aria-label={`${item.productName} 수량 줄이기`}
-                          className="min-h-12 min-w-12 border border-slate-300 bg-white px-4 py-3 text-xl font-bold focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 disabled:bg-slate-100"
+                          className={`min-h-12 min-w-12 border border-slate-300 bg-white px-4 py-3 text-xl font-bold disabled:bg-slate-100 ${FOCUS_VISIBLE_CLASS}`}
                           disabled={isClosed}
                           type="button"
                           onClick={() => updateItemQuantity(item.barcode, item.quantity - 1)}
@@ -658,7 +708,7 @@ export default function BranchOrderApp() {
                         <span className="min-w-16 text-center text-2xl font-bold">{item.quantity}</span>
                         <button
                           aria-label={`${item.productName} 수량 늘리기`}
-                          className="min-h-12 min-w-12 border border-slate-300 bg-white px-4 py-3 text-xl font-bold focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 disabled:bg-slate-100"
+                          className={`min-h-12 min-w-12 border border-slate-300 bg-white px-4 py-3 text-xl font-bold disabled:bg-slate-100 ${FOCUS_VISIBLE_CLASS}`}
                           disabled={isClosed}
                           type="button"
                           onClick={() => updateItemQuantity(item.barcode, item.quantity + 1)}
@@ -681,7 +731,8 @@ export default function BranchOrderApp() {
             <div className="flex flex-col gap-3">
               <h2 className="m-0 text-xl font-bold">제출 전 최종 확인</h2>
               <p className="m-0 text-slate-700">
-                지사: {selectedBranch?.name ?? "-"} / 상품 {totals.lineItemCount}종 / 총 수량 {totals.totalQuantity}
+                지사: {selectedBranch?.name ?? "-"} / 상품 {totals.lineItemCount}종 / 총 수량{" "}
+                {totals.totalQuantity}
               </p>
               {totals.unregisteredItemCount > 0 ? (
                 <p className="m-0 text-amber-700">
@@ -699,7 +750,7 @@ export default function BranchOrderApp() {
               </ul>
               <div className="flex flex-col gap-3 sm:flex-row">
                 <button
-                  className="w-full border border-slate-300 bg-white px-5 py-4 text-lg font-semibold focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 disabled:bg-slate-100 sm:w-auto"
+                  className={`w-full border border-slate-300 bg-white px-5 py-4 text-lg font-semibold disabled:bg-slate-100 sm:w-auto ${FOCUS_VISIBLE_CLASS}`}
                   disabled={submitPending}
                   type="button"
                   onClick={() => setConfirmingSubmit(false)}
@@ -707,18 +758,22 @@ export default function BranchOrderApp() {
                   다시 보기
                 </button>
                 <button
-                  className="w-full bg-teal-700 px-5 py-4 text-lg font-semibold text-white focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 disabled:bg-slate-300 sm:w-auto"
+                  className={`w-full bg-teal-700 px-5 py-4 text-lg font-semibold text-white disabled:bg-slate-300 sm:w-auto ${FOCUS_VISIBLE_CLASS}`}
                   disabled={!canSubmit}
                   type="button"
                   onClick={submitOrder}
                 >
-                  {submitPending ? "제출 중입니다..." : orderStatus === "submitted" ? "주문 다시 제출" : "최종 제출"}
+                  {submitPending
+                    ? "제출 중입니다..."
+                    : orderStatus === "submitted"
+                      ? "주문 다시 제출"
+                      : "최종 제출"}
                 </button>
               </div>
             </div>
           ) : (
             <button
-              className="w-full bg-teal-700 px-5 py-4 text-lg font-semibold text-white focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 disabled:bg-slate-300"
+              className={`w-full bg-teal-700 px-5 py-4 text-lg font-semibold text-white disabled:bg-slate-300 ${FOCUS_VISIBLE_CLASS}`}
               disabled={!canSubmit}
               type="button"
               onClick={() => setConfirmingSubmit(true)}

@@ -50,7 +50,10 @@ export async function GET(request: NextRequest) {
     .limit(10);
 
   if (barcodeError) {
-    return NextResponse.json({ error: barcodeError.message }, { status: 500 });
+    return NextResponse.json(
+      { error: "상품 검색 중 오류가 발생했습니다." },
+      { status: 500 },
+    );
   }
 
   for (const row of exactMatches ?? []) {
@@ -67,7 +70,10 @@ export async function GET(request: NextRequest) {
     .limit(20);
 
   if (nameError) {
-    return NextResponse.json({ error: nameError.message }, { status: 500 });
+    return NextResponse.json(
+      { error: "상품 검색 중 오류가 발생했습니다." },
+      { status: 500 },
+    );
   }
 
   for (const row of nameMatches ?? []) {
