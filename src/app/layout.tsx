@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Auto Order",
-  description: "지사 주문 취합 및 납품처 발주 파일 생성 시스템.",
+  description: "지사 주문 취합 및 납품처 발주 파일 생성 시스템",
   manifest: "/manifest.webmanifest",
 };
 

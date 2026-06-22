@@ -53,7 +53,7 @@ export default function HomePage() {
               lineHeight: 1.8,
             }}
           >
-            지사 주문 취합 및 납품처 발주 파일 생성 시스템.
+            지사 주문 취합 및 납품처 발주 파일 생성 시스템
           </p>
         </div>
 
