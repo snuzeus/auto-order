@@ -1,13 +1,9 @@
+import "server-only";
+
 import { createServerClient } from "@supabase/ssr";
-import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 
-function getEnv(
-  name:
-    | "NEXT_PUBLIC_SUPABASE_URL"
-    | "NEXT_PUBLIC_SUPABASE_ANON_KEY"
-    | "SUPABASE_SERVICE_ROLE_KEY",
-) {
+function getEnv(name: "NEXT_PUBLIC_SUPABASE_URL" | "NEXT_PUBLIC_SUPABASE_ANON_KEY") {
   const value = process.env[name];
 
   if (!value) {
@@ -42,19 +38,6 @@ export async function createClient() {
             // Server Components cannot mutate cookies; middleware/route handlers can.
           }
         },
-      },
-    },
-  );
-}
-
-export function createServiceClient() {
-  return createSupabaseClient(
-    getEnv("NEXT_PUBLIC_SUPABASE_URL"),
-    getEnv("SUPABASE_SERVICE_ROLE_KEY"),
-    {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
       },
     },
   );
