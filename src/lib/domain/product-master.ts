@@ -7,31 +7,23 @@ export type ProductMasterUploadRow = {
   unitPrice: number;
 };
 
-type ProductMasterHeader =
-  | "바코드 번호"
-  | "상품코드"
-  | "상품명"
-  | "규격"
-  | "납품 거래처명"
-  | "단가";
+export const PRODUCT_MASTER_HEADERS = [
+  "바코드 번호",
+  "상품코드",
+  "상품명",
+  "규격",
+  "납품 거래처명",
+  "단가",
+] as const;
 
-type ProductMasterField = keyof ProductMasterUploadRow;
-
-const HEADER_TO_FIELD: Record<ProductMasterHeader, ProductMasterField> = {
-  "바코드 번호": "barcode",
-  상품코드: "productCode",
-  상품명: "name",
-  규격: "spec",
-  "납품 거래처명": "supplierName",
-  단가: "unitPrice",
-};
-
-const REQUIRED_HEADERS: ProductMasterHeader[] = [
+export const REQUIRED_PRODUCT_MASTER_HEADERS = [
   "바코드 번호",
   "상품코드",
   "상품명",
   "납품 거래처명",
-];
+] as const;
+
+type ProductMasterHeader = (typeof PRODUCT_MASTER_HEADERS)[number];
 
 type RichTextValue = {
   richText?: Array<{ text?: string }>;
@@ -104,25 +96,27 @@ export function isEmptyProductMasterRow(row: Record<string, unknown>): boolean {
   return Object.values(row).every((value) => cellValueToText(value) === "");
 }
 
+export function getMissingRequiredProductMasterHeaders(headers: string[]): string[] {
+  return REQUIRED_PRODUCT_MASTER_HEADERS.filter((header) => !headers.includes(header));
+}
+
 export function normalizeProductMasterRow(row: Record<string, unknown>): ProductMasterUploadRow {
-  for (const header of REQUIRED_HEADERS) {
+  for (const header of REQUIRED_PRODUCT_MASTER_HEADERS) {
     if (!cellValueToText(row[header])) {
       throw new Error(`${header} 값이 없습니다.`);
     }
   }
 
-  const spec = cellValueToText(row["규격"]);
-
   return {
     barcode: cellValueToText(row["바코드 번호"]),
     productCode: cellValueToText(row["상품코드"]),
     name: cellValueToText(row["상품명"]),
-    spec,
+    spec: cellValueToText(row["규격"]),
     supplierName: cellValueToText(row["납품 거래처명"]),
-    unitPrice: parseUnitPrice(row.단가),
+    unitPrice: parseUnitPrice(row["단가"]),
   };
 }
 
-export function getProductMasterFieldName(header: ProductMasterHeader): ProductMasterField {
-  return HEADER_TO_FIELD[header];
+export function normalizeProductMasterHeader(header: ProductMasterHeader): string {
+  return header;
 }

@@ -267,7 +267,7 @@ export default function AdminDashboard() {
               </label>
               <input
                 ref={fileInputRef}
-                accept=".xlsx,.xlsm,.xls"
+                accept=".xlsx,.xlsm"
                 className={`block w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm text-slate-900 file:mr-4 file:rounded-md file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white ${FOCUS_VISIBLE_CLASS}`}
                 disabled={uploadPending}
                 id="product-master-file"

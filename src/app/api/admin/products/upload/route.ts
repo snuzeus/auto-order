@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { requireAdmin } from "@/lib/auth/admin";
 import {
+  getMissingRequiredProductMasterHeaders,
   isEmptyProductMasterRow,
   normalizeProductMasterRow,
   type ProductMasterUploadRow,
@@ -24,14 +25,7 @@ type ProductUpsertRow = {
   is_active: true;
 };
 
-const PRODUCT_MASTER_HEADERS = [
-  "바코드 번호",
-  "상품코드",
-  "상품명",
-  "규격",
-  "납품 거래처명",
-  "단가",
-] as const;
+const MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024;
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
@@ -85,14 +79,10 @@ function getCellText(value: unknown): string {
   return String(value).trim();
 }
 
-function isExcelFile(file: File): boolean {
+function isSupportedExcelFile(file: File): boolean {
   const name = file.name.toLowerCase();
 
-  return (
-    name.endsWith(".xlsx") ||
-    name.endsWith(".xlsm") ||
-    name.endsWith(".xls")
-  );
+  return name.endsWith(".xlsx") || name.endsWith(".xlsm");
 }
 
 function readHeaderNames(worksheet: ExcelJS.Worksheet): string[] {
@@ -148,8 +138,16 @@ export async function POST(request: Request) {
     return jsonError("업로드할 엑셀 파일을 선택해 주세요.", 400);
   }
 
-  if (!isExcelFile(file)) {
-    return jsonError("엑셀 파일(.xlsx)만 업로드할 수 있습니다.", 400);
+  if (!isSupportedExcelFile(file)) {
+    return jsonError("엑셀 파일(.xlsx, .xlsm)만 업로드할 수 있습니다.", 400);
+  }
+
+  if (file.size <= 0) {
+    return jsonError("비어 있는 엑셀 파일은 업로드할 수 없습니다.", 400);
+  }
+
+  if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+    return jsonError("엑셀 파일은 5MB 이하만 업로드할 수 있습니다.", 400);
   }
 
   const workbook = new ExcelJS.Workbook();
@@ -170,14 +168,15 @@ export async function POST(request: Request) {
   }
 
   const headers = readHeaderNames(worksheet);
-  const hasKnownHeader = PRODUCT_MASTER_HEADERS.some((header) => headers.includes(header));
+  const missingHeaders = getMissingRequiredProductMasterHeaders(headers);
 
-  if (!hasKnownHeader) {
-    return jsonError("엑셀 헤더를 다시 확인해 주세요.", 400);
+  if (missingHeaders.length > 0) {
+    return jsonError(`필수 헤더가 없습니다: ${missingHeaders.join(", ")}`, 400);
   }
 
   const validationErrors: UploadValidationError[] = [];
   const rowsToUpsert: ProductUpsertRow[] = [];
+  const seenBarcodes = new Set<string>();
 
   for (let rowNumber = 2; rowNumber <= worksheet.rowCount; rowNumber += 1) {
     const worksheetRow = worksheet.getRow(rowNumber);
@@ -189,6 +188,16 @@ export async function POST(request: Request) {
 
     try {
       const normalizedRow = normalizeProductMasterRow(rowObject);
+
+      if (seenBarcodes.has(normalizedRow.barcode)) {
+        validationErrors.push({
+          rowNumber,
+          reason: "중복된 바코드 번호입니다.",
+        });
+        continue;
+      }
+
+      seenBarcodes.add(normalizedRow.barcode);
       rowsToUpsert.push(mapProductRow(normalizedRow));
     } catch (error) {
       validationErrors.push({
