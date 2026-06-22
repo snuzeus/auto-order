@@ -28,13 +28,36 @@ type ShouldPersistBranchDraftInput = {
   orderStatus: "not_submitted" | OrderStatus;
 };
 
+function orderItemSortKey(item: OrderItemDraft): string {
+  return [
+    item.barcode,
+    item.productId ?? "",
+    item.productCode ?? "",
+    item.productName,
+    item.spec,
+    item.supplierName ?? "",
+    item.memo ?? "",
+    item.isUnregistered ? "1" : "0",
+    String(item.quantity),
+  ].join("\u0000");
+}
+
+function normalizeOrderItems(items: OrderItemDraft[]): OrderItemDraft[] {
+  return [...items].sort((left, right) =>
+    orderItemSortKey(left).localeCompare(orderItemSortKey(right)),
+  );
+}
+
 function areOrderItemsEqual(left: OrderItemDraft[], right: OrderItemDraft[]): boolean {
   if (left.length !== right.length) {
     return false;
   }
 
-  return left.every((item, index) => {
-    const other = right[index];
+  const normalizedLeft = normalizeOrderItems(left);
+  const normalizedRight = normalizeOrderItems(right);
+
+  return normalizedLeft.every((item, index) => {
+    const other = normalizedRight[index];
 
     return (
       item.productId === other.productId &&

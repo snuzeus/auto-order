@@ -1,6 +1,7 @@
 import type { OrderItemDraft } from "@/lib/types";
 import {
   buildSubmitBranchOrderItems,
+  hasDraftDifferences,
   restoreBranchDraft,
   shouldPersistBranchDraft,
 } from "@/lib/domain/branch-order-draft";
@@ -95,6 +96,51 @@ describe("shouldPersistBranchDraft", () => {
         orderStatus: "submitted",
       }),
     ).toBe(false);
+  });
+
+  it("treats the same items in different order as already synced", () => {
+    const reorderedItems: OrderItemDraft[] = [
+      {
+        barcode: "99990001",
+        productName: "수기 상품",
+        spec: "",
+        quantity: 1,
+        isUnregistered: true,
+      },
+      {
+        barcode: "88010001",
+        productName: "생수",
+        spec: "500ml",
+        quantity: 2,
+        isUnregistered: false,
+      },
+    ];
+
+    const reorderedSyncedItems: OrderItemDraft[] = [
+      {
+        barcode: "88010001",
+        productName: "생수",
+        spec: "500ml",
+        quantity: 2,
+        isUnregistered: false,
+      },
+      {
+        barcode: "99990001",
+        productName: "수기 상품",
+        spec: "",
+        quantity: 1,
+        isUnregistered: true,
+      },
+    ];
+
+    expect(
+      shouldPersistBranchDraft({
+        items: reorderedItems,
+        syncedItems: reorderedSyncedItems,
+        orderStatus: "submitted",
+      }),
+    ).toBe(false);
+    expect(hasDraftDifferences(reorderedItems, reorderedSyncedItems)).toBe(false);
   });
 
   it("does not persist when the order is closed", () => {

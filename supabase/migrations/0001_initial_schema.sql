@@ -178,8 +178,13 @@ begin
   set status = 'submitted',
       submitted_at = excluded.submitted_at,
       updated_at = excluded.updated_at
+  where public.orders.status <> 'closed'
   returning *
   into v_order;
+
+  if v_order.id is null then
+    raise exception '이미 마감된 주문이라 수정할 수 없습니다.';
+  end if;
 
   delete from public.order_items
   where order_id = v_order.id;
