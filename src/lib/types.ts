@@ -4,10 +4,6 @@ export type Branch = {
   id: string;
   code: string;
   name: string;
-  deliveryAddress: string;
-  recipientName: string;
-  phone: string;
-  isActive: boolean;
 };
 
 export type Product = {
