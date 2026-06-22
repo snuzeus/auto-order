@@ -81,6 +81,8 @@ export default function AdminDashboard() {
     canStartClose &&
     (status?.summary.unresolvedItemCount ?? 0) === 0;
   const canStartCancel = Boolean(status) && !loading && !actionPending && isClosedDay;
+  const canDownloadZip = Boolean(status) && !loading && isClosedDay;
+  const downloadHref = `/api/admin/excel?date=${encodeURIComponent(orderDate)}`;
 
   const loadStatus = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -246,9 +248,31 @@ export default function AdminDashboard() {
                 >
                   {actionPending && actionMode === "cancel" ? "마감 취소 중..." : "마감 취소"}
                 </button>
+                {canDownloadZip ? (
+                  <a
+                    className={`flex min-h-14 flex-1 items-center justify-center border border-slate-300 bg-white px-5 py-4 text-center text-lg font-bold text-slate-900 ${FOCUS_VISIBLE_CLASS}`}
+                    href={downloadHref}
+                  >
+                    납품처 ZIP 다운로드
+                  </a>
+                ) : (
+                  <button
+                    aria-disabled="true"
+                    className={`min-h-14 flex-1 border border-slate-300 bg-slate-100 px-5 py-4 text-lg font-bold text-slate-400 ${FOCUS_VISIBLE_CLASS}`}
+                    disabled
+                    type="button"
+                  >
+                    납품처 ZIP 다운로드
+                  </button>
+                )}
               </div>
               {!hasSummaryData ? (
                 <p className="mt-3 text-sm text-slate-600">제출된 주문이 있어야 마감을 진행할 수 있습니다.</p>
+              ) : null}
+              {!isClosedDay ? (
+                <p className="mt-3 text-sm text-slate-600">
+                  납품처 ZIP은 마감이 완료된 뒤에 다운로드할 수 있습니다.
+                </p>
               ) : null}
             </div>
 
