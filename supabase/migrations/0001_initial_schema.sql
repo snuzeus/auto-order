@@ -57,6 +57,15 @@ create table order_items (
   updated_at timestamptz not null default now()
 );
 
+create table admin_users (
+  id uuid primary key default gen_random_uuid(),
+  auth_user_id uuid not null unique references auth.users(id) on delete cascade,
+  name text not null,
+  role admin_role not null default 'admin',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table closing_batches (
   id uuid primary key default gen_random_uuid(),
   order_date date not null unique,
@@ -75,15 +84,6 @@ create table generated_files (
   file_name text not null,
   storage_path text,
   generated_at timestamptz not null default now()
-);
-
-create table admin_users (
-  id uuid primary key default gen_random_uuid(),
-  auth_user_id uuid not null unique references auth.users(id) on delete cascade,
-  name text not null,
-  role admin_role not null default 'admin',
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
 );
 
 create index orders_branch_id_idx on orders (branch_id);
