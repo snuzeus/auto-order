@@ -1,17 +1,49 @@
 import { z } from "zod";
 
-const ymdDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+function isValidYmdDate(value: string): boolean {
+  const match = /^(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})$/.exec(value);
+
+  if (!match?.groups) {
+    return false;
+  }
+
+  const year = Number(match.groups.year);
+  const month = Number(match.groups.month);
+  const day = Number(match.groups.day);
+
+  const date = new Date(Date.UTC(year, month - 1, day));
+
+  return date.toISOString().slice(0, 10) === value;
+}
+
+const requiredTrimmedText = (fieldName: string) =>
+  z.string().trim().min(1, { message: `${fieldName} is required` });
+
+const optionalTrimmedText = () =>
+  z
+    .string()
+    .trim()
+    .transform((value) => (value === "" ? undefined : value))
+    .optional();
+
+const ymdDateSchema = z
+  .string()
+  .refine(isValidYmdDate, { message: "Invalid calendar date" });
 
 export const orderItemDraftSchema = z.object({
   productId: z.string().uuid().optional(),
-  barcode: z.string().min(1),
-  productCode: z.string().optional(),
-  productName: z.string().min(1),
-  spec: z.string().default(""),
-  supplierName: z.string().optional(),
+  barcode: requiredTrimmedText("barcode"),
+  productCode: optionalTrimmedText(),
+  productName: requiredTrimmedText("productName"),
+  spec: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => value ?? ""),
+  supplierName: optionalTrimmedText(),
   quantity: z.number().int().min(0),
   isUnregistered: z.boolean(),
-  memo: z.string().optional(),
+  memo: optionalTrimmedText(),
 });
 
 export const submitOrderSchema = z.object({

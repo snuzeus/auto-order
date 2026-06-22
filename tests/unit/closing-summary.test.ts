@@ -5,21 +5,21 @@ describe("buildClosingSummary", () => {
     const branchStatuses = [
       {
         branchId: "branch-1",
-        branchName: "강남점",
+        branchName: "Gangnam",
         status: "submitted",
         itemCount: 2,
         totalQuantity: 5,
       },
       {
         branchId: "branch-2",
-        branchName: "부산점",
+        branchName: "Busan",
         status: "not_submitted",
         itemCount: 0,
         totalQuantity: 0,
       },
       {
         branchId: "branch-3",
-        branchName: "대구점",
+        branchName: "Daegu",
         status: "closed",
         itemCount: 1,
         totalQuantity: 1,
@@ -30,26 +30,26 @@ describe("buildClosingSummary", () => {
       {
         barcode: "1",
         productCode: "P1",
-        productName: "생수",
+        productName: "Water",
         spec: "500ml",
-        supplierName: "에이공급사",
+        supplierName: "Supplier A",
         quantity: 3,
         isUnregistered: false,
       },
       {
         barcode: "2",
         productCode: "P2",
-        productName: "컵라면",
-        spec: "소",
+        productName: "Cup Noodle",
+        spec: "Small",
         quantity: 2,
         isUnregistered: true,
       },
       {
         barcode: "3",
         productCode: "P3",
-        productName: "무시항목",
+        productName: "Ignored Item",
         spec: "",
-        supplierName: "비활성공급사",
+        supplierName: "Inactive Supplier",
         quantity: 0,
         isUnregistered: true,
       },
@@ -57,12 +57,31 @@ describe("buildClosingSummary", () => {
 
     expect(buildClosingSummary(branchStatuses, items)).toEqual({
       submittedBranchCount: 1,
-      unsubmittedBranchNames: ["부산점"],
+      unsubmittedBranchNames: ["Busan"],
       totalItemCount: 2,
       totalQuantity: 5,
       supplierCount: 1,
       unregisteredItemCount: 1,
       unresolvedItemCount: 1,
     });
+  });
+
+  it("treats whitespace-only supplier names as unresolved", () => {
+    const summary = buildClosingSummary(
+      [],
+      [
+        {
+          barcode: "4",
+          productName: "Manual Item",
+          spec: "",
+          supplierName: "   ",
+          quantity: 1,
+          isUnregistered: true,
+        },
+      ],
+    );
+
+    expect(summary.supplierCount).toBe(0);
+    expect(summary.unresolvedItemCount).toBe(1);
   });
 });
