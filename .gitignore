@@ -1,3 +1,8 @@
 .worktrees/
 node_modules/
 .next/
+.env*.local
+.dev-server.pid
+.dev-server.port
+dev-server.log
+dev-server.err.log

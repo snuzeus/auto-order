@@ -68,7 +68,6 @@ describe("createSupplierWorkbook", () => {
       "연락처",
       "상품코드",
       "상품명",
-      "규격",
       "수량",
     ]);
     expect(worksheet?.getRow(1).font?.bold).toBe(true);
@@ -79,7 +78,6 @@ describe("createSupplierWorkbook", () => {
       "010-1111-2222",
       "P1",
       "물티슈",
-      "100매",
       2,
     ]);
   });

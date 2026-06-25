@@ -6,8 +6,6 @@ export type ClosingSummary = {
   totalItemCount: number;
   totalQuantity: number;
   supplierCount: number;
-  unregisteredItemCount: number;
-  unresolvedItemCount: number;
 };
 
 export function buildClosingSummary(
@@ -29,7 +27,5 @@ export function buildClosingSummary(
     totalItemCount: activeItems.length,
     totalQuantity: activeItems.reduce((sum, item) => sum + item.quantity, 0),
     supplierCount: supplierNames.size,
-    unregisteredItemCount: activeItems.filter((item) => item.isUnregistered).length,
-    unresolvedItemCount: activeItems.filter((item) => !item.supplierName?.trim()).length,
   };
 }

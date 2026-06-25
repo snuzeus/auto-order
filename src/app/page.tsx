@@ -83,7 +83,7 @@ export default function HomePage() {
             지사 주문
           </Link>
           <Link
-            href="/admin"
+            href="/admin/login"
             style={{
               display: "flex",
               minHeight: "8rem",

@@ -11,6 +11,8 @@ import { upsertOrderItem } from "@/lib/domain/branch-order-state";
 import { calculateOrderTotals } from "@/lib/domain/order-totals";
 import type { Branch, OrderItemDraft, OrderStatus, Product } from "@/lib/types";
 
+import BarcodeScannerButton from "./BarcodeScannerButton";
+
 type BranchResponse = {
   branches?: Branch[];
   error?: string;
@@ -49,6 +51,22 @@ function draftStorageKey(branchId: string, orderDate: string): string {
   return `auto-order-branch-draft:${branchId}:${orderDate}`;
 }
 
+function formatCurrency(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value)) {
+    return "-";
+  }
+
+  return `${Math.round(value).toLocaleString("ko-KR")}원`;
+}
+
+function calculateLineAmount(item: OrderItemDraft): number | undefined {
+  if (item.unitPrice === undefined || !Number.isFinite(item.unitPrice)) {
+    return undefined;
+  }
+
+  return item.unitPrice * item.quantity;
+}
+
 function hasActiveItems(items: OrderItemDraft[]): boolean {
   return items.some((item) => item.quantity > 0);
 }
@@ -70,11 +88,6 @@ export default function BranchOrderApp() {
   const [searchError, setSearchError] = useState("");
   const [searchTouched, setSearchTouched] = useState(false);
   const [productQuantities, setProductQuantities] = useState<Record<string, number>>({});
-  const [manualName, setManualName] = useState("");
-  const [manualBarcode, setManualBarcode] = useState("");
-  const [manualSpec, setManualSpec] = useState("");
-  const [manualQuantity, setManualQuantity] = useState(1);
-  const [manualMemo, setManualMemo] = useState("");
   const [submitPending, setSubmitPending] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [submitNotice, setSubmitNotice] = useState("");
@@ -281,23 +294,11 @@ export default function BranchOrderApp() {
     !submitPending &&
     !isClosed &&
     !orderLoading;
-  const showManualForm =
-    searchTouched &&
-    query.trim() !== "" &&
-    !searchLoading &&
-    !searchError &&
-    searchResults.length === 0;
-
   function resetEntryFields() {
     setQuery("");
     setSearchResults([]);
     setSearchTouched(false);
     setProductQuantities({});
-    setManualBarcode("");
-    setManualName("");
-    setManualSpec("");
-    setManualQuantity(1);
-    setManualMemo("");
   }
 
   function handleBranchChange(nextBranchId: string) {
@@ -336,6 +337,7 @@ export default function BranchOrderApp() {
       productName: product.name,
       spec: product.spec,
       supplierName: product.supplierName,
+      unitPrice: product.unitPrice,
       quantity,
       isUnregistered: false,
     };
@@ -345,35 +347,10 @@ export default function BranchOrderApp() {
     setSubmitNotice("");
   }
 
-  function addManualItem() {
-    const trimmedBarcode = manualBarcode.trim();
-    const trimmedName = manualName.trim();
-    const trimmedSpec = manualSpec.trim();
-    const trimmedMemo = manualMemo.trim();
-
-    if (!trimmedBarcode) {
-      setSubmitError("수기 바코드 또는 식별값을 입력해 주세요.");
-      return;
-    }
-
-    if (!trimmedName) {
-      setSubmitError("수기 상품명은 반드시 입력해야 합니다.");
-      return;
-    }
-
-    const nextItem: OrderItemDraft = {
-      barcode: trimmedBarcode,
-      productName: trimmedName,
-      spec: trimmedSpec,
-      quantity: Math.max(1, Math.floor(manualQuantity)),
-      isUnregistered: true,
-      memo: trimmedMemo || undefined,
-    };
-
-    setItems((currentItems) => upsertOrderItem(currentItems, nextItem));
+  function handleBarcodeDetected(barcode: string) {
+    setQuery(barcode);
+    setSearchTouched(true);
     setSubmitError("");
-    setSubmitNotice("");
-    resetEntryFields();
   }
 
   function updateItemQuantity(barcode: string, quantity: number) {
@@ -517,8 +494,8 @@ export default function BranchOrderApp() {
             <p className="mt-2 text-3xl font-bold">{totals.totalQuantity}</p>
           </div>
           <div className="rounded-lg bg-white p-4 shadow-sm">
-            <p className="m-0 text-sm text-slate-600">수기 상품</p>
-            <p className="mt-2 text-3xl font-bold">{totals.unregisteredItemCount}</p>
+            <p className="m-0 text-sm text-slate-600">합계 금액</p>
+            <p className="mt-2 text-3xl font-bold">{formatCurrency(totals.totalAmount)}</p>
           </div>
         </div>
 
@@ -534,13 +511,18 @@ export default function BranchOrderApp() {
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
-              setManualBarcode(event.target.value);
               setSearchTouched(true);
               setSubmitError("");
             }}
           />
+          <div className="mt-3 sm:hidden">
+            <BarcodeScannerButton
+              disabled={!selectedBranchId || isClosed}
+              onDetected={handleBarcodeDetected}
+            />
+          </div>
           <p className="mt-2 text-sm text-slate-600">
-            등록 상품이 없으면 아래에서 수기 상품으로 바로 추가할 수 있습니다.
+            등록된 상품만 주문할 수 있습니다. 상품이 보이지 않으면 본사에 상품 등록을 요청해 주세요.
           </p>
           {isClosed ? (
             <p className="mt-3 text-sm text-red-700">이미 마감된 주문은 수정할 수 없습니다.</p>
@@ -561,6 +543,9 @@ export default function BranchOrderApp() {
                   <p className="m-0 text-lg font-semibold">{product.name}</p>
                   <p className="mt-1 text-sm text-slate-600">
                     바코드 {product.barcode} · 규격 {product.spec || "-"} · 납품처 {product.supplierName}
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-800">
+                    상품코드 {product.productCode} · 공급가 {formatCurrency(product.unitPrice)}
                   </p>
                   <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
                     <label className="text-sm font-medium" htmlFor={`qty-${product.id}`}>
@@ -595,83 +580,14 @@ export default function BranchOrderApp() {
             </div>
           ) : null}
 
-          {showManualForm ? (
-            <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
-              <h2 className="m-0 text-lg font-bold">등록되지 않은 상품</h2>
-              <p className="mt-2 text-sm text-slate-700">
-                검색 결과가 없어 수기 상품으로 추가할 수 있습니다.
-              </p>
-              <div className="mt-4 grid gap-3">
-                <div>
-                  <label className="mb-2 block text-sm font-medium" htmlFor="manual-barcode">
-                    바코드 또는 식별값
-                  </label>
-                  <input
-                    id="manual-barcode"
-                    className={`w-full border border-slate-300 px-4 py-4 text-lg ${FOCUS_VISIBLE_CLASS}`}
-                    value={manualBarcode}
-                    onChange={(event) => setManualBarcode(event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="mb-2 block text-sm font-medium" htmlFor="manual-name">
-                    상품명
-                  </label>
-                  <input
-                    id="manual-name"
-                    className={`w-full border border-slate-300 px-4 py-4 text-lg ${FOCUS_VISIBLE_CLASS}`}
-                    value={manualName}
-                    onChange={(event) => setManualName(event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="mb-2 block text-sm font-medium" htmlFor="manual-spec">
-                    규격 또는 메모
-                  </label>
-                  <input
-                    id="manual-spec"
-                    className={`w-full border border-slate-300 px-4 py-4 text-lg ${FOCUS_VISIBLE_CLASS}`}
-                    value={manualSpec}
-                    onChange={(event) => setManualSpec(event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="mb-2 block text-sm font-medium" htmlFor="manual-qty">
-                    수량
-                  </label>
-                  <input
-                    id="manual-qty"
-                    className={`w-full border border-slate-300 px-4 py-4 text-lg ${FOCUS_VISIBLE_CLASS}`}
-                    inputMode="numeric"
-                    min={1}
-                    step={1}
-                    type="number"
-                    value={manualQuantity}
-                    onChange={(event) => setManualQuantity(Number(event.target.value) || 1)}
-                  />
-                </div>
-                <div>
-                  <label className="mb-2 block text-sm font-medium" htmlFor="manual-memo">
-                    추가 메모
-                  </label>
-                  <textarea
-                    id="manual-memo"
-                    className={`w-full border border-slate-300 px-4 py-4 text-lg ${FOCUS_VISIBLE_CLASS}`}
-                    rows={3}
-                    value={manualMemo}
-                    onChange={(event) => setManualMemo(event.target.value)}
-                  />
-                </div>
-                <button
-                  className={`w-full bg-amber-500 px-5 py-4 text-lg font-semibold text-slate-950 disabled:bg-slate-300 ${FOCUS_VISIBLE_CLASS}`}
-                  disabled={!selectedBranchId || isClosed}
-                  type="button"
-                  onClick={addManualItem}
-                >
-                  수기 상품 추가
-                </button>
-              </div>
-            </div>
+          {searchTouched &&
+          query.trim() !== "" &&
+          !searchLoading &&
+          !searchError &&
+          searchResults.length === 0 ? (
+            <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              등록된 상품을 찾지 못했습니다. 본사 관리자에게 상품 등록을 요청해 주세요.
+            </p>
           ) : null}
         </div>
 
@@ -685,40 +601,65 @@ export default function BranchOrderApp() {
                 .filter((item) => item.quantity > 0)
                 .map((item) => (
                   <div key={item.barcode} className="rounded-lg border border-slate-200 p-4">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <p className="m-0 text-lg font-semibold">{item.productName}</p>
-                        <p className="mt-1 text-sm text-slate-600">
-                          {item.isUnregistered ? "수기 상품" : "등록 상품"} · {item.spec || "규격 없음"}
-                        </p>
-                        {item.memo ? (
-                          <p className="mt-1 text-sm text-slate-600">메모: {item.memo}</p>
-                        ) : null}
+                    <div className="grid gap-3 sm:grid-cols-[1fr_2fr_1fr_auto_1fr] sm:items-center">
+                        <div>
+                          <p className="m-0 text-xs font-semibold text-slate-500">상품코드</p>
+                          <p className="m-0 mt-1 break-words text-base font-semibold">
+                            {item.productCode || item.barcode}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="m-0 text-xs font-semibold text-slate-500">상품명</p>
+                          <p className="m-0 mt-1 text-base font-semibold">{item.productName}</p>
+                          <p className="m-0 mt-1 text-xs text-slate-500">{item.spec || "규격 없음"}</p>
+                        </div>
+                        <div>
+                          <p className="m-0 text-xs font-semibold text-slate-500">공급가</p>
+                          <p className="m-0 mt-1 text-base font-semibold">
+                            {formatCurrency(item.unitPrice)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="m-0 text-xs font-semibold text-slate-500">수량</p>
+                          <div className="mt-1 flex items-center gap-2">
+                            <button
+                              aria-label={`${item.productName} 수량 줄이기`}
+                              className={`min-h-12 min-w-12 border border-slate-300 bg-white px-4 py-3 text-xl font-bold disabled:bg-slate-100 ${FOCUS_VISIBLE_CLASS}`}
+                              disabled={isClosed}
+                              type="button"
+                              onClick={() => updateItemQuantity(item.barcode, item.quantity - 1)}
+                            >
+                              -
+                            </button>
+                            <span className="min-w-10 text-center text-2xl font-bold">
+                              {item.quantity}
+                            </span>
+                            <button
+                              aria-label={`${item.productName} 수량 늘리기`}
+                              className={`min-h-12 min-w-12 border border-slate-300 bg-white px-4 py-3 text-xl font-bold disabled:bg-slate-100 ${FOCUS_VISIBLE_CLASS}`}
+                              disabled={isClosed}
+                              type="button"
+                              onClick={() => updateItemQuantity(item.barcode, item.quantity + 1)}
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                        <div>
+                          <p className="m-0 text-xs font-semibold text-slate-500">금액</p>
+                          <p className="m-0 mt-1 text-base font-bold">
+                            {formatCurrency(calculateLineAmount(item))}
+                          </p>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          aria-label={`${item.productName} 수량 줄이기`}
-                          className={`min-h-12 min-w-12 border border-slate-300 bg-white px-4 py-3 text-xl font-bold disabled:bg-slate-100 ${FOCUS_VISIBLE_CLASS}`}
-                          disabled={isClosed}
-                          type="button"
-                          onClick={() => updateItemQuantity(item.barcode, item.quantity - 1)}
-                        >
-                          -
-                        </button>
-                        <span className="min-w-16 text-center text-2xl font-bold">{item.quantity}</span>
-                        <button
-                          aria-label={`${item.productName} 수량 늘리기`}
-                          className={`min-h-12 min-w-12 border border-slate-300 bg-white px-4 py-3 text-xl font-bold disabled:bg-slate-100 ${FOCUS_VISIBLE_CLASS}`}
-                          disabled={isClosed}
-                          type="button"
-                          onClick={() => updateItemQuantity(item.barcode, item.quantity + 1)}
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
                   </div>
                 ))}
+              <div className="rounded-lg border border-teal-200 bg-teal-50 px-4 py-4 text-right">
+                <p className="m-0 text-sm font-semibold text-teal-900">합계 금액</p>
+                <p className="m-0 mt-1 text-2xl font-bold text-teal-950">
+                  {formatCurrency(totals.totalAmount)}
+                </p>
+              </div>
             </div>
           )}
         </div>
@@ -732,22 +673,51 @@ export default function BranchOrderApp() {
               <h2 className="m-0 text-xl font-bold">제출 전 최종 확인</h2>
               <p className="m-0 text-slate-700">
                 지사: {selectedBranch?.name ?? "-"} / 상품 {totals.lineItemCount}종 / 총 수량{" "}
-                {totals.totalQuantity}
+                {totals.totalQuantity} / 합계 금액 {formatCurrency(totals.totalAmount)}
               </p>
-              {totals.unregisteredItemCount > 0 ? (
-                <p className="m-0 text-amber-700">
-                  수기 상품 {totals.unregisteredItemCount}건이 포함되어 있습니다.
-                </p>
-              ) : null}
-              <ul className="m-0 list-disc pl-5 text-slate-700">
+              <div className="overflow-hidden rounded-lg border border-slate-200">
                 {items
                   .filter((item) => item.quantity > 0)
                   .map((item) => (
-                    <li key={`${item.barcode}-confirm`}>
-                      {item.productName} {item.quantity}개
-                    </li>
+                    <div
+                      key={`${item.barcode}-confirm`}
+                      className="grid gap-2 border-b border-slate-200 px-4 py-3 last:border-b-0 sm:grid-cols-[1fr_2fr_1fr_0.8fr_1fr]"
+                    >
+                      <div>
+                        <p className="m-0 text-xs font-semibold text-slate-500">상품코드</p>
+                        <p className="m-0 mt-1 break-words text-sm font-semibold">
+                          {item.productCode || item.barcode}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="m-0 text-xs font-semibold text-slate-500">상품명</p>
+                        <p className="m-0 mt-1 text-sm font-semibold">{item.productName}</p>
+                      </div>
+                      <div>
+                        <p className="m-0 text-xs font-semibold text-slate-500">공급가</p>
+                        <p className="m-0 mt-1 text-sm font-semibold">
+                          {formatCurrency(item.unitPrice)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="m-0 text-xs font-semibold text-slate-500">수량</p>
+                        <p className="m-0 mt-1 text-sm font-semibold">{item.quantity}</p>
+                      </div>
+                      <div>
+                        <p className="m-0 text-xs font-semibold text-slate-500">금액</p>
+                        <p className="m-0 mt-1 text-sm font-bold">
+                          {formatCurrency(calculateLineAmount(item))}
+                        </p>
+                      </div>
+                    </div>
                   ))}
-              </ul>
+                <div className="flex items-center justify-between gap-3 bg-teal-50 px-4 py-4">
+                  <p className="m-0 text-base font-bold text-teal-950">합계 금액</p>
+                  <p className="m-0 text-2xl font-bold text-teal-950">
+                    {formatCurrency(totals.totalAmount)}
+                  </p>
+                </div>
+              </div>
               <div className="flex flex-col gap-3 sm:flex-row">
                 <button
                   className={`w-full border border-slate-300 bg-white px-5 py-4 text-lg font-semibold disabled:bg-slate-100 sm:w-auto ${FOCUS_VISIBLE_CLASS}`}

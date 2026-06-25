@@ -66,7 +66,7 @@ begin
   if exists (
     select 1
     from public.closing_batches
-    where order_date = p_order_date
+    where public.closing_batches.order_date = p_order_date
       and status = 'closed'
   ) then
     raise exception using message = 'ORDER_DATE_CLOSED';
@@ -75,8 +75,8 @@ begin
   select *
   into v_order
   from public.orders
-  where branch_id = p_branch_id
-    and order_date = p_order_date
+  where public.orders.branch_id = p_branch_id
+    and public.orders.order_date = p_order_date
   for update;
 
   if found and v_order.status = 'closed' then
@@ -184,7 +184,7 @@ begin
   if exists (
     select 1
     from public.closing_batches
-    where order_date = p_order_date
+    where public.closing_batches.order_date = p_order_date
       and status = 'closed'
   ) then
     raise exception '이미 마감된 날짜입니다.';
@@ -206,8 +206,8 @@ begin
   set status = 'closed',
       closed_at = v_now,
       updated_at = v_now
-  where order_date = p_order_date
-    and status = 'submitted';
+  where public.orders.order_date = p_order_date
+    and public.orders.status = 'submitted';
 
   if not found then
     raise exception '마감할 제출 주문이 없습니다.';
@@ -255,9 +255,9 @@ begin
   select id
   into v_closing_batch_id
   from public.closing_batches
-  where order_date = p_order_date
-    and status = 'closed'
-  order by closed_at desc
+  where public.closing_batches.order_date = p_order_date
+    and public.closing_batches.status = 'closed'
+  order by public.closing_batches.closed_at desc
   limit 1
   for update;
 
@@ -269,14 +269,14 @@ begin
   set status = 'submitted',
       closed_at = null,
       updated_at = v_now
-  where order_date = p_order_date
-    and status = 'closed';
+  where public.orders.order_date = p_order_date
+    and public.orders.status = 'closed';
 
   update public.closing_batches
   set status = 'cancelled',
       cancelled_by = p_admin_id,
       cancelled_at = v_now
-  where id = v_closing_batch_id;
+  where public.closing_batches.id = v_closing_batch_id;
 
   return v_closing_batch_id;
 end;

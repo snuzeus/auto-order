@@ -1,18 +1,19 @@
 import { createBrowserClient } from "@supabase/ssr";
 
-function getPublicEnv(name: "NEXT_PUBLIC_SUPABASE_URL" | "NEXT_PUBLIC_SUPABASE_ANON_KEY") {
-  const value = process.env[name];
+export function createClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  if (!value) {
-    throw new Error(`${name} is not set`);
+  if (!supabaseUrl) {
+    throw new Error("NEXT_PUBLIC_SUPABASE_URL is not set");
   }
 
-  return value;
-}
+  if (!supabaseAnonKey) {
+    throw new Error("NEXT_PUBLIC_SUPABASE_ANON_KEY is not set");
+  }
 
-export function createClient() {
   return createBrowserClient(
-    getPublicEnv("NEXT_PUBLIC_SUPABASE_URL"),
-    getPublicEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+    supabaseUrl,
+    supabaseAnonKey,
   );
 }

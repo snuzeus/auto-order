@@ -36,6 +36,7 @@ function orderItemSortKey(item: OrderItemDraft): string {
     item.productName,
     item.spec,
     item.supplierName ?? "",
+    String(item.unitPrice ?? ""),
     item.memo ?? "",
     item.isUnregistered ? "1" : "0",
     String(item.quantity),
@@ -66,6 +67,7 @@ function areOrderItemsEqual(left: OrderItemDraft[], right: OrderItemDraft[]): bo
       item.productName === other.productName &&
       item.spec === other.spec &&
       item.supplierName === other.supplierName &&
+      item.unitPrice === other.unitPrice &&
       item.quantity === other.quantity &&
       item.isUnregistered === other.isUnregistered &&
       item.memo === other.memo

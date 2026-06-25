@@ -18,6 +18,33 @@ function escapeForIlike(value: string): string {
   return value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
 }
 
+function formatDashedBarcodePrefix(value: string): string | null {
+  const digits = value.replaceAll(/\D/g, "");
+
+  if (digits.length !== value.length || digits.length <= 3) {
+    return null;
+  }
+
+  if (digits.length <= 7) {
+    return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  }
+
+  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+}
+
+function buildCodeSearchFilter(query: string): string {
+  const searchPrefixes = new Set([escapeForIlike(query)]);
+  const dashedPrefix = formatDashedBarcodePrefix(query);
+
+  if (dashedPrefix) {
+    searchPrefixes.add(escapeForIlike(dashedPrefix));
+  }
+
+  return Array.from(searchPrefixes)
+    .flatMap((prefix) => [`barcode.ilike.${prefix}%`, `product_code.ilike.${prefix}%`])
+    .join(",");
+}
+
 function mapProduct(row: ProductRow): Product {
   return {
     id: row.id,
@@ -61,11 +88,33 @@ export async function GET(request: NextRequest) {
     results.set(product.id, product);
   }
 
+  const escapedQuery = escapeForIlike(query);
+
+  const { data: codeMatches, error: codeError } = await supabase
+    .from("products")
+    .select("id, barcode, product_code, name, spec, supplier_name, unit_price, is_active")
+    .eq("is_active", true)
+    .or(buildCodeSearchFilter(query))
+    .order("name", { ascending: true })
+    .limit(20);
+
+  if (codeError) {
+    return NextResponse.json(
+      { error: "?곹뭹 寃??以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎." },
+      { status: 500 },
+    );
+  }
+
+  for (const row of codeMatches ?? []) {
+    const product = mapProduct(row as ProductRow);
+    results.set(product.id, product);
+  }
+
   const { data: nameMatches, error: nameError } = await supabase
     .from("products")
     .select("id, barcode, product_code, name, spec, supplier_name, unit_price, is_active")
     .eq("is_active", true)
-    .ilike("name", `%${escapeForIlike(query)}%`)
+    .ilike("name", `%${escapedQuery}%`)
     .order("name", { ascending: true })
     .limit(20);
 

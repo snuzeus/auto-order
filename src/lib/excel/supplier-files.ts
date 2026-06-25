@@ -45,7 +45,6 @@ export async function createSupplierWorkbook(rows: SupplierExcelRow[]): Promise<
     { header: "연락처", key: "phone", width: 18 },
     { header: "상품코드", key: "productCode", width: 16 },
     { header: "상품명", key: "productName", width: 28 },
-    { header: "규격", key: "spec", width: 18 },
     { header: "수량", key: "quantity", width: 10 },
   ];
 
@@ -56,7 +55,6 @@ export async function createSupplierWorkbook(rows: SupplierExcelRow[]): Promise<
       phone: row.phone,
       productCode: row.productCode,
       productName: row.productName,
-      spec: row.spec,
       quantity: row.quantity,
     });
   }

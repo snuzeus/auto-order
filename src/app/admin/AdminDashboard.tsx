@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
+
+import { createClient } from "@/lib/supabase/browser";
 
 type AdminStatus = {
   orderDate: string;
@@ -10,6 +13,16 @@ type AdminStatus = {
     status: "not_submitted" | "submitted" | "closed";
     itemCount: number;
     totalQuantity: number;
+    items: Array<{
+      barcode: string;
+      productCode?: string;
+      productName: string;
+      spec: string;
+      supplierName?: string;
+      quantity: number;
+      isUnregistered: boolean;
+      memo?: string;
+    }>;
   }>;
   summary: {
     submittedBranchCount: number;
@@ -17,12 +30,21 @@ type AdminStatus = {
     totalItemCount: number;
     totalQuantity: number;
     supplierCount: number;
-    unregisteredItemCount: number;
-    unresolvedItemCount: number;
   };
 };
 
 type StatusResponse = AdminStatus & {
+  error?: string;
+};
+
+type ClosingMode = "manual" | "auto_14";
+
+type ClosingSettingsResponse = {
+  closingSettings?: {
+    mode: ClosingMode;
+    autoCloseTime: string;
+    timezone: string;
+  };
   error?: string;
 };
 
@@ -42,11 +64,38 @@ const FOCUS_VISIBLE_CLASS =
 
 function todayYmd(): string {
   const now = new Date();
+  return toYmd(now);
+}
+
+function yesterdayYmd(): string {
+  const date = new Date();
+  date.setDate(date.getDate() - 1);
+
+  return toYmd(date);
+}
+
+function toYmd(dateValue: Date): string {
+  const now = dateValue;
   const year = now.getFullYear();
   const month = `${now.getMonth() + 1}`.padStart(2, "0");
   const date = `${now.getDate()}`.padStart(2, "0");
 
   return `${year}-${month}-${date}`;
+}
+
+function formatDateLabel(dateValue: string): string {
+  const today = todayYmd();
+  const yesterday = yesterdayYmd();
+
+  if (dateValue === today) {
+    return "오늘";
+  }
+
+  if (dateValue === yesterday) {
+    return "어제";
+  }
+
+  return dateValue;
 }
 
 function formatBranchStatus(status: AdminStatus["branchStatuses"][number]["status"]): string {
@@ -72,27 +121,73 @@ function statusTone(status: AdminStatus["branchStatuses"][number]["status"]): st
 }
 
 export default function AdminDashboard() {
+  const router = useRouter();
   const [status, setStatus] = useState<AdminStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [actionMode, setActionMode] = useState<"none" | "close" | "cancel">("none");
   const [actionPending, setActionPending] = useState(false);
+  const [closingMode, setClosingMode] = useState<ClosingMode>("manual");
+  const [settingsLoading, setSettingsLoading] = useState(true);
+  const [settingsPending, setSettingsPending] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadPending, setUploadPending] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [uploadNotice, setUploadNotice] = useState("");
   const [uploadRowErrors, setUploadRowErrors] = useState<UploadValidationError[]>([]);
+  const [expandedBranchId, setExpandedBranchId] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const orderDate = useMemo(() => todayYmd(), []);
+  const todayDate = useMemo(() => todayYmd(), []);
+  const yesterdayDate = useMemo(() => yesterdayYmd(), []);
+  const [orderDate, setOrderDate] = useState(todayDate);
   const isClosedDay = status?.branchStatuses.some((branch) => branch.status === "closed") ?? false;
   const hasSummaryData = (status?.summary.totalItemCount ?? 0) > 0;
-  const canStartClose = Boolean(status) && !loading && !actionPending && !isClosedDay && hasSummaryData;
-  const canConfirmClose = canStartClose && (status?.summary.unresolvedItemCount ?? 0) === 0;
+  const isManualClosingMode = closingMode === "manual";
+  const canStartClose =
+    Boolean(status) &&
+    !loading &&
+    !settingsLoading &&
+    !actionPending &&
+    !isClosedDay &&
+    hasSummaryData &&
+    isManualClosingMode;
   const canStartCancel = Boolean(status) && !loading && !actionPending && isClosedDay;
   const canDownloadZip = Boolean(status) && !loading && isClosedDay;
   const downloadHref = `/api/admin/excel?date=${encodeURIComponent(orderDate)}`;
+
+  const loadClosingSettings = useCallback(async (signal?: AbortSignal) => {
+    setSettingsLoading(true);
+
+    try {
+      const response = await fetch("/api/admin/closing-settings", {
+        signal,
+      });
+      const data = (await response.json()) as ClosingSettingsResponse;
+
+      if (response.status === 401) {
+        router.replace("/admin/login");
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "마감 설정을 불러오지 못했습니다.");
+      }
+
+      setClosingMode(data.closingSettings?.mode ?? "manual");
+    } catch (settingsError) {
+      if (signal?.aborted) {
+        return;
+      }
+
+      setError(settingsError instanceof Error ? settingsError.message : "마감 설정을 불러오지 못했습니다.");
+    } finally {
+      if (!signal?.aborted) {
+        setSettingsLoading(false);
+      }
+    }
+  }, [router]);
 
   const loadStatus = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -103,6 +198,11 @@ export default function AdminDashboard() {
         signal,
       });
       const data = (await response.json()) as StatusResponse;
+
+      if (response.status === 401) {
+        router.replace("/admin/login");
+        return;
+      }
 
       if (!response.ok) {
         throw new Error(data.error ?? "관리자 현황을 불러오지 못했습니다.");
@@ -125,15 +225,73 @@ export default function AdminDashboard() {
         setLoading(false);
       }
     }
-  }, [orderDate]);
+  }, [orderDate, router]);
+
+  async function handleLogout() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.replace("/admin/login");
+    router.refresh();
+  }
 
   useEffect(() => {
     const controller = new AbortController();
 
     loadStatus(controller.signal);
+    loadClosingSettings(controller.signal);
 
     return () => controller.abort();
-  }, [loadStatus]);
+  }, [loadClosingSettings, loadStatus]);
+
+  function changeOrderDate(nextDate: string) {
+    if (nextDate === orderDate || loading || actionPending) {
+      return;
+    }
+
+    setOrderDate(nextDate);
+    setStatus(null);
+    setActionMode("none");
+    setExpandedBranchId("");
+    setNotice("");
+    setError("");
+  }
+
+  async function updateClosingMode(nextMode: ClosingMode) {
+    if (settingsPending || nextMode === closingMode) {
+      return;
+    }
+
+    setSettingsPending(true);
+    setError("");
+    setNotice("");
+
+    try {
+      const response = await fetch("/api/admin/closing-settings", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ mode: nextMode }),
+      });
+      const data = (await response.json()) as ClosingSettingsResponse;
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "마감 설정을 저장하지 못했습니다.");
+      }
+
+      setClosingMode(data.closingSettings?.mode ?? nextMode);
+      setActionMode("none");
+      setNotice(
+        nextMode === "auto_14"
+          ? "마감 방식이 오후 2시 자동 마감으로 저장되었습니다."
+          : "마감 방식이 수동 마감으로 저장되었습니다.",
+      );
+    } catch (settingsError) {
+      setError(settingsError instanceof Error ? settingsError.message : "마감 설정을 저장하지 못했습니다.");
+    } finally {
+      setSettingsPending(false);
+    }
+  }
 
   async function runAction(endpoint: "/api/admin/close" | "/api/admin/cancel-close") {
     setActionPending(true);
@@ -233,8 +391,56 @@ export default function AdminDashboard() {
         <header className="rounded-lg bg-slate-900 px-5 py-6 text-white">
           <p className="m-0 text-sm font-semibold text-slate-200">본사 관리자</p>
           <h1 className="mt-2 text-3xl font-bold">일일 마감 현황</h1>
-          <p className="mt-3 text-base text-slate-200">조회일 {orderDate}</p>
+          <p className="mt-3 text-base text-slate-200">
+            조회일 {orderDate} ({formatDateLabel(orderDate)})
+          </p>
+          <button
+            className={`mt-4 min-h-11 border border-white/30 bg-white/10 px-4 py-2 text-sm font-semibold text-white ${FOCUS_VISIBLE_CLASS}`}
+            type="button"
+            onClick={handleLogout}
+          >
+            로그아웃
+          </button>
         </header>
+
+        <section className="rounded-lg bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="m-0 text-2xl font-bold">조회일 선택</h2>
+              <p className="mt-2 text-sm text-slate-600">
+                오늘과 어제 주문 현황을 확인하고, 마감된 날짜는 공급처 ZIP을 다시 다운로드할 수 있습니다.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:min-w-72">
+              <button
+                aria-pressed={orderDate === todayDate}
+                className={`min-h-12 rounded-lg border px-4 py-3 text-base font-bold ${FOCUS_VISIBLE_CLASS} ${
+                  orderDate === todayDate
+                    ? "border-slate-900 bg-slate-900 text-white"
+                    : "border-slate-300 bg-white text-slate-900"
+                }`}
+                disabled={loading || actionPending}
+                type="button"
+                onClick={() => changeOrderDate(todayDate)}
+              >
+                오늘
+              </button>
+              <button
+                aria-pressed={orderDate === yesterdayDate}
+                className={`min-h-12 rounded-lg border px-4 py-3 text-base font-bold ${FOCUS_VISIBLE_CLASS} ${
+                  orderDate === yesterdayDate
+                    ? "border-slate-900 bg-slate-900 text-white"
+                    : "border-slate-300 bg-white text-slate-900"
+                }`}
+                disabled={loading || actionPending}
+                type="button"
+                onClick={() => changeOrderDate(yesterdayDate)}
+              >
+                어제
+              </button>
+            </div>
+          </div>
+        </section>
 
         {notice ? (
           <p className="rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-base text-teal-900">
@@ -246,6 +452,58 @@ export default function AdminDashboard() {
             {error}
           </p>
         ) : null}
+
+        <section className="rounded-lg bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="m-0 text-2xl font-bold">마감 방식</h2>
+              <p className="mt-2 text-sm text-slate-600">
+                자동 마감은 매일 오후 2시 기준으로 실행되고, 수동 마감은 관리자가 직접 마감합니다.
+              </p>
+            </div>
+            {settingsLoading ? (
+              <p className="m-0 text-sm text-slate-600">설정을 불러오는 중입니다.</p>
+            ) : null}
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <button
+              aria-pressed={closingMode === "auto_14"}
+              className={`min-h-24 rounded-lg border px-4 py-4 text-left ${FOCUS_VISIBLE_CLASS} ${
+                closingMode === "auto_14"
+                  ? "border-teal-600 bg-teal-50 text-teal-950"
+                  : "border-slate-200 bg-white text-slate-900"
+              }`}
+              disabled={settingsLoading || settingsPending}
+              type="button"
+              onClick={() => updateClosingMode("auto_14")}
+            >
+              <span className="block text-lg font-bold">오후 2시 자동 마감</span>
+              <span className="mt-2 block text-sm">
+                매일 14:00에 제출된 주문을 자동으로 마감합니다.
+              </span>
+            </button>
+            <button
+              aria-pressed={closingMode === "manual"}
+              className={`min-h-24 rounded-lg border px-4 py-4 text-left ${FOCUS_VISIBLE_CLASS} ${
+                closingMode === "manual"
+                  ? "border-slate-900 bg-slate-50 text-slate-950"
+                  : "border-slate-200 bg-white text-slate-900"
+              }`}
+              disabled={settingsLoading || settingsPending}
+              type="button"
+              onClick={() => updateClosingMode("manual")}
+            >
+              <span className="block text-lg font-bold">수동 마감</span>
+              <span className="mt-2 block text-sm">
+                관리자가 확인 후 직접 마감 버튼을 눌러 마감합니다.
+              </span>
+            </button>
+          </div>
+          {settingsPending ? (
+            <p className="mt-3 text-sm text-slate-600">마감 방식을 저장하는 중입니다.</p>
+          ) : null}
+        </section>
 
         <section className="rounded-lg bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -344,18 +602,10 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-1">
               <div className="rounded-lg bg-white p-5 shadow-sm">
                 <p className="m-0 text-sm text-slate-600">공급처 수</p>
                 <p className="mt-2 text-3xl font-bold">{status.summary.supplierCount}</p>
-              </div>
-              <div className="rounded-lg bg-white p-5 shadow-sm">
-                <p className="m-0 text-sm text-slate-600">미등록 품목</p>
-                <p className="mt-2 text-3xl font-bold">{status.summary.unregisteredItemCount}</p>
-              </div>
-              <div className="rounded-lg bg-white p-5 shadow-sm">
-                <p className="m-0 text-sm text-slate-600">공급처 미확정</p>
-                <p className="mt-2 text-3xl font-bold">{status.summary.unresolvedItemCount}</p>
               </div>
             </div>
 
@@ -400,6 +650,11 @@ export default function AdminDashboard() {
                   제출된 주문이 없어 마감을 진행할 수 없습니다.
                 </p>
               ) : null}
+              {!isManualClosingMode ? (
+                <p className="mt-3 text-sm text-slate-600">
+                  현재 오후 2시 자동 마감 모드입니다. 수동 마감은 마감 방식을 수동 마감으로 바꾼 뒤 사용할 수 있습니다.
+                </p>
+              ) : null}
               {!isClosedDay ? (
                 <p className="mt-3 text-sm text-slate-600">
                   공급처 ZIP은 마감이 완료된 뒤에 다운로드할 수 있습니다.
@@ -426,9 +681,6 @@ export default function AdminDashboard() {
                   <p className="m-0 rounded-lg bg-slate-50 px-4 py-3 text-base">
                     공급처 수 <strong>{status.summary.supplierCount}</strong>
                   </p>
-                  <p className="m-0 rounded-lg bg-slate-50 px-4 py-3 text-base">
-                    공급처 미확정 <strong>{status.summary.unresolvedItemCount}</strong>
-                  </p>
                 </div>
                 <div className="mt-4 rounded-lg bg-amber-50 px-4 py-4 text-base text-amber-900">
                   <p className="m-0 font-semibold">미제출 지점</p>
@@ -438,11 +690,6 @@ export default function AdminDashboard() {
                       : "없음"}
                   </p>
                 </div>
-                {status.summary.unresolvedItemCount > 0 ? (
-                  <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-base text-red-800">
-                    공급처가 비어 있는 상품이 있어 지금은 마감할 수 없습니다.
-                  </p>
-                ) : null}
                 <div className="mt-4 flex flex-col gap-3 sm:flex-row">
                   <button
                     className={`min-h-14 flex-1 border border-slate-300 bg-white px-5 py-4 text-lg font-bold disabled:bg-slate-100 ${FOCUS_VISIBLE_CLASS}`}
@@ -454,7 +701,7 @@ export default function AdminDashboard() {
                   </button>
                   <button
                     className={`min-h-14 flex-1 bg-red-700 px-5 py-4 text-lg font-bold text-white disabled:bg-slate-300 ${FOCUS_VISIBLE_CLASS}`}
-                    disabled={!canConfirmClose || actionPending}
+                    disabled={!canStartClose || actionPending}
                     type="button"
                     onClick={() => runAction("/api/admin/close")}
                   >
@@ -509,25 +756,74 @@ export default function AdminDashboard() {
                 <p className="mt-4 text-base text-slate-600">표시할 지점이 없습니다.</p>
               ) : (
                 <div className="mt-4 overflow-hidden rounded-lg border border-slate-200">
-                  {status.branchStatuses.map((branch) => (
-                    <div
-                      key={branch.branchId}
-                      className="grid gap-3 border-b border-slate-200 px-4 py-4 last:border-b-0 md:grid-cols-[minmax(0,2fr)_auto_auto_auto]"
-                    >
-                      <div>
-                        <p className="m-0 text-lg font-semibold">{branch.branchName}</p>
-                      </div>
-                      <div>
-                        <span
-                          className={`inline-flex min-h-10 items-center rounded-full px-4 text-sm font-semibold ${statusTone(branch.status)}`}
+                  {status.branchStatuses.map((branch) => {
+                    const isExpanded = expandedBranchId === branch.branchId;
+
+                    return (
+                      <div key={branch.branchId} className="border-b border-slate-200 last:border-b-0">
+                        <button
+                          aria-expanded={isExpanded}
+                          className={`grid w-full gap-3 px-4 py-4 text-left hover:bg-slate-50 md:grid-cols-[minmax(0,2fr)_auto_auto_auto] ${FOCUS_VISIBLE_CLASS}`}
+                          type="button"
+                          onClick={() =>
+                            setExpandedBranchId((current) =>
+                              current === branch.branchId ? "" : branch.branchId,
+                            )
+                          }
                         >
-                          {formatBranchStatus(branch.status)}
-                        </span>
+                          <div>
+                            <p className="m-0 text-lg font-semibold">{branch.branchName}</p>
+                            <p className="mt-1 text-sm text-slate-500">
+                              {isExpanded ? "상세 닫기" : "주문 상세 보기"}
+                            </p>
+                          </div>
+                          <div>
+                            <span
+                              className={`inline-flex min-h-10 items-center rounded-full px-4 text-sm font-semibold ${statusTone(branch.status)}`}
+                            >
+                              {formatBranchStatus(branch.status)}
+                            </span>
+                          </div>
+                          <p className="m-0 text-base text-slate-700">품목 {branch.itemCount}</p>
+                          <p className="m-0 text-base text-slate-700">수량 {branch.totalQuantity}</p>
+                        </button>
+
+                        {isExpanded ? (
+                          <div className="bg-slate-50 px-4 py-4">
+                            {branch.items.length === 0 ? (
+                              <p className="m-0 rounded-lg border border-slate-200 bg-white px-4 py-4 text-sm text-slate-600">
+                                제출된 주문 품목이 없습니다.
+                              </p>
+                            ) : (
+                              <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                                {branch.items.map((item) => (
+                                  <div
+                                    key={`${branch.branchId}-${item.barcode}-${item.productName}`}
+                                    className="grid gap-2 border-b border-slate-200 px-4 py-4 last:border-b-0 md:grid-cols-[minmax(0,2fr)_1fr_auto]"
+                                  >
+                                    <div>
+                                     <p className="m-0 text-base font-semibold">{item.productName}</p>
+                                     <p className="mt-1 text-sm text-slate-600">
+                                        등록 상품 · {item.spec || "규격 없음"}
+                                     </p>
+                                      {item.memo ? (
+                                        <p className="mt-1 text-sm text-slate-600">메모: {item.memo}</p>
+                                      ) : null}
+                                    </div>
+                                    <div className="text-sm text-slate-600">
+                                      <p className="m-0">바코드 {item.barcode}</p>
+                                      <p className="m-0 mt-1">공급처 {item.supplierName ?? "-"}</p>
+                                    </div>
+                                    <p className="m-0 text-right text-xl font-bold">{item.quantity}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ) : null}
                       </div>
-                      <p className="m-0 text-base text-slate-700">품목 {branch.itemCount}</p>
-                      <p className="m-0 text-base text-slate-700">수량 {branch.totalQuantity}</p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

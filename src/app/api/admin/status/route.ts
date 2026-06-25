@@ -64,6 +64,7 @@ function buildBranchStatuses(branches: BranchRow[], orders: OrderRow[]): BranchO
       status: order?.status ?? "not_submitted",
       itemCount: items.length,
       totalQuantity: items.reduce((sum, item) => sum + item.quantity, 0),
+      items,
     };
   });
 }

@@ -1,7 +1,7 @@
 import { buildClosingSummary } from "@/lib/domain/closing-summary";
 
 describe("buildClosingSummary", () => {
-  it("summarizes submitted branches, active items, suppliers, and unresolved items", () => {
+  it("summarizes submitted branches, active items, and suppliers", () => {
     const branchStatuses = [
       {
         branchId: "branch-1",
@@ -41,8 +41,9 @@ describe("buildClosingSummary", () => {
         productCode: "P2",
         productName: "Cup Noodle",
         spec: "Small",
+        supplierName: "Supplier B",
         quantity: 2,
-        isUnregistered: true,
+        isUnregistered: false,
       },
       {
         barcode: "3",
@@ -51,7 +52,7 @@ describe("buildClosingSummary", () => {
         spec: "",
         supplierName: "Inactive Supplier",
         quantity: 0,
-        isUnregistered: true,
+        isUnregistered: false,
       },
     ];
 
@@ -60,28 +61,7 @@ describe("buildClosingSummary", () => {
       unsubmittedBranchNames: ["Busan"],
       totalItemCount: 2,
       totalQuantity: 5,
-      supplierCount: 1,
-      unregisteredItemCount: 1,
-      unresolvedItemCount: 1,
+      supplierCount: 2,
     });
-  });
-
-  it("treats whitespace-only supplier names as unresolved", () => {
-    const summary = buildClosingSummary(
-      [],
-      [
-        {
-          barcode: "4",
-          productName: "Manual Item",
-          spec: "",
-          supplierName: "   ",
-          quantity: 1,
-          isUnregistered: true,
-        },
-      ],
-    );
-
-    expect(summary.supplierCount).toBe(0);
-    expect(summary.unresolvedItemCount).toBe(1);
   });
 });

@@ -24,6 +24,7 @@ export type OrderItemDraft = {
   productName: string;
   spec: string;
   supplierName?: string;
+  unitPrice?: number;
   quantity: number;
   isUnregistered: boolean;
   memo?: string;
@@ -32,7 +33,7 @@ export type OrderItemDraft = {
 export type OrderTotals = {
   lineItemCount: number;
   totalQuantity: number;
-  unregisteredItemCount: number;
+  totalAmount: number;
 };
 
 export type BranchOrderStatus = {
@@ -41,4 +42,5 @@ export type BranchOrderStatus = {
   status: OrderStatus | "not_submitted";
   itemCount: number;
   totalQuantity: number;
+  items: OrderItemDraft[];
 };

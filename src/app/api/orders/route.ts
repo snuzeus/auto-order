@@ -20,6 +20,9 @@ type OrderItemRow = {
   product_name: string;
   spec: string;
   supplier_name: string | null;
+  products?: {
+    unit_price: number | string | null;
+  } | null;
   quantity: number;
   is_unregistered: boolean;
   memo: string | null;
@@ -64,6 +67,10 @@ function mapOrderItem(row: OrderItemRow): OrderItemDraft {
     productName: row.product_name,
     spec: row.spec,
     supplierName: row.supplier_name ?? undefined,
+    unitPrice:
+      row.products?.unit_price === null || row.products?.unit_price === undefined
+        ? undefined
+        : Number(row.products.unit_price),
     quantity: row.quantity,
     isUnregistered: row.is_unregistered,
     memo: row.memo ?? undefined,
@@ -127,7 +134,7 @@ export async function GET(request: NextRequest) {
   const { data, error } = await supabase
     .from("orders")
     .select(
-      "id, status, branch_id, order_date, order_items(product_id, barcode, product_code, product_name, spec, supplier_name, quantity, is_unregistered, memo)",
+      "id, status, branch_id, order_date, order_items(product_id, barcode, product_code, product_name, spec, supplier_name, quantity, is_unregistered, memo, products(unit_price))",
     )
     .eq("branch_id", branchId)
     .eq("order_date", orderDate)

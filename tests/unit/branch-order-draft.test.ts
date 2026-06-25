@@ -45,10 +45,13 @@ describe("restoreBranchDraft", () => {
     const draftItems: OrderItemDraft[] = [
       {
         barcode: "99990001",
-        productName: "수기 상품",
+        productId: "550e8400-e29b-41d4-a716-446655440001",
+        productCode: "P-002",
+        productName: "등록 상품",
         spec: "",
+        supplierName: "샘물유통",
         quantity: 3,
-        isUnregistered: true,
+        isUnregistered: false,
       },
     ];
 
@@ -102,10 +105,13 @@ describe("shouldPersistBranchDraft", () => {
     const reorderedItems: OrderItemDraft[] = [
       {
         barcode: "99990001",
-        productName: "수기 상품",
+        productId: "550e8400-e29b-41d4-a716-446655440001",
+        productCode: "P-002",
+        productName: "등록 상품",
         spec: "",
+        supplierName: "샘물유통",
         quantity: 1,
-        isUnregistered: true,
+        isUnregistered: false,
       },
       {
         barcode: "88010001",
@@ -126,10 +132,13 @@ describe("shouldPersistBranchDraft", () => {
       },
       {
         barcode: "99990001",
-        productName: "수기 상품",
+        productId: "550e8400-e29b-41d4-a716-446655440001",
+        productCode: "P-002",
+        productName: "등록 상품",
         spec: "",
+        supplierName: "샘물유통",
         quantity: 1,
-        isUnregistered: true,
+        isUnregistered: false,
       },
     ];
 
@@ -178,10 +187,13 @@ describe("buildSubmitBranchOrderItems", () => {
       },
       {
         barcode: "99990001",
-        productName: "수기 상품",
+        productId: "550e8400-e29b-41d4-a716-446655440001",
+        productCode: "P-002",
+        productName: "등록 상품",
         spec: "",
+        supplierName: "샘물유통",
         quantity: 0,
-        isUnregistered: true,
+        isUnregistered: false,
       },
     ]);
 

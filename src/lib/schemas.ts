@@ -41,6 +41,7 @@ export const orderItemDraftSchema = z.object({
     .optional()
     .transform((value) => value ?? ""),
   supplierName: optionalTrimmedText(),
+  unitPrice: z.number().min(0).optional(),
   quantity: z.number().int().min(0),
   isUnregistered: z.boolean(),
   memo: optionalTrimmedText(),
@@ -54,4 +55,8 @@ export const submitOrderSchema = z.object({
 
 export const closeDateSchema = z.object({
   orderDate: ymdDateSchema,
+});
+
+export const closingModeSchema = z.object({
+  mode: z.enum(["manual", "auto_14"]),
 });
