@@ -1,0 +1,10 @@
+{
+  "name": "Auto Order",
+  "short_name": "AutoOrder",
+  "lang": "ko",
+  "start_url": "/branch",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#0f766e",
+  "icons": []
+}

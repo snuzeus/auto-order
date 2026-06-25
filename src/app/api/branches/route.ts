@@ -1,0 +1,38 @@
+import { NextResponse } from "next/server";
+
+import { createServiceClient } from "@/lib/supabase/service";
+import type { Branch } from "@/lib/types";
+
+type BranchRow = {
+  id: string;
+  code: string;
+  name: string;
+};
+
+function mapBranch(row: BranchRow): Branch {
+  return {
+    id: row.id,
+    code: row.code,
+    name: row.name,
+  };
+}
+
+export async function GET() {
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from("branches")
+    .select("id, code, name")
+    .eq("is_active", true)
+    .order("name", { ascending: true });
+
+  if (error) {
+    return NextResponse.json(
+      { error: "지점 목록을 불러오지 못했습니다." },
+      { status: 500 },
+    );
+  }
+
+  return NextResponse.json({
+    branches: (data ?? []).map((row) => mapBranch(row as BranchRow)),
+  });
+}
