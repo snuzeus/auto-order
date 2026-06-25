@@ -457,13 +457,13 @@ export default function BranchOrderApp() {
           </p>
         </header>
 
-        <div className="rounded-lg bg-white p-5 shadow-sm">
+        <div className="rounded-lg border border-teal-200 bg-teal-50/60 p-5 shadow-sm">
           <label className="mb-2 block text-base font-semibold" htmlFor="branch-select">
             지사 선택
           </label>
           <select
             id="branch-select"
-            className={`w-full border border-slate-300 px-4 py-4 text-lg ${FOCUS_VISIBLE_CLASS}`}
+            className={`w-full rounded-lg border-2 border-teal-400 bg-white px-4 py-4 text-lg shadow-sm disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-500 ${FOCUS_VISIBLE_CLASS}`}
             disabled={branchesLoading || submitPending}
             value={selectedBranchId}
             onChange={(event) => handleBranchChange(event.target.value)}
@@ -485,27 +485,27 @@ export default function BranchOrderApp() {
         </div>
 
         <div className="grid gap-3 sm:grid-cols-3">
-          <div className="rounded-lg bg-white p-4 shadow-sm">
+          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
             <p className="m-0 text-sm text-slate-600">상품 줄 수</p>
             <p className="mt-2 text-3xl font-bold">{totals.lineItemCount}</p>
           </div>
-          <div className="rounded-lg bg-white p-4 shadow-sm">
+          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
             <p className="m-0 text-sm text-slate-600">총 수량</p>
             <p className="mt-2 text-3xl font-bold">{totals.totalQuantity}</p>
           </div>
-          <div className="rounded-lg bg-white p-4 shadow-sm">
+          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
             <p className="m-0 text-sm text-slate-600">합계 금액</p>
             <p className="mt-2 text-3xl font-bold">{formatCurrency(totals.totalAmount)}</p>
           </div>
         </div>
 
-        <div className="rounded-lg bg-white p-5 shadow-sm">
+        <div className="rounded-lg border border-teal-200 bg-teal-50/60 p-5 shadow-sm">
           <label className="mb-2 block text-base font-semibold" htmlFor="product-search">
             바코드 또는 상품명 검색
           </label>
           <input
             id="product-search"
-            className={`w-full border border-slate-300 px-4 py-4 text-lg ${FOCUS_VISIBLE_CLASS}`}
+            className={`w-full rounded-lg border-2 border-teal-400 bg-white px-4 py-4 text-lg shadow-sm placeholder:text-slate-400 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-500 ${FOCUS_VISIBLE_CLASS}`}
             disabled={!selectedBranchId || isClosed}
             placeholder="예: 8801234567890 또는 생수"
             value={query}
@@ -539,7 +539,7 @@ export default function BranchOrderApp() {
           {searchResults.length > 0 ? (
             <div className="mt-4 flex flex-col gap-3">
               {searchResults.map((product) => (
-                <div key={product.id} className="rounded-lg border border-slate-200 p-4">
+                <div key={product.id} className="rounded-lg border border-teal-200 bg-white p-4 shadow-sm">
                   <p className="m-0 text-lg font-semibold">{product.name}</p>
                   <p className="mt-1 text-sm text-slate-600">
                     바코드 {product.barcode} · 규격 {product.spec || "-"} · 납품처 {product.supplierName}
@@ -553,7 +553,7 @@ export default function BranchOrderApp() {
                     </label>
                     <input
                       id={`qty-${product.id}`}
-                      className={`w-full border border-slate-300 px-4 py-3 text-lg sm:w-28 ${FOCUS_VISIBLE_CLASS}`}
+                      className={`w-full rounded-lg border-2 border-teal-400 bg-white px-4 py-3 text-lg shadow-sm sm:w-28 ${FOCUS_VISIBLE_CLASS}`}
                       inputMode="numeric"
                       min={1}
                       step={1}
@@ -567,7 +567,7 @@ export default function BranchOrderApp() {
                       }
                     />
                     <button
-                      className={`w-full bg-teal-700 px-5 py-4 text-lg font-semibold text-white disabled:bg-slate-300 sm:w-auto ${FOCUS_VISIBLE_CLASS}`}
+                      className={`w-full rounded-lg bg-teal-700 px-5 py-4 text-lg font-semibold text-white shadow-sm disabled:bg-slate-300 sm:w-auto ${FOCUS_VISIBLE_CLASS}`}
                       disabled={!selectedBranchId || isClosed}
                       type="button"
                       onClick={() => addRegisteredProduct(product)}
@@ -591,7 +591,7 @@ export default function BranchOrderApp() {
           ) : null}
         </div>
 
-        <div className="rounded-lg bg-white p-5 shadow-sm">
+        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="m-0 text-xl font-bold">주문 목록</h2>
           {!hasActiveItems(items) ? (
             <p className="mt-3 text-slate-600">아직 담은 상품이 없습니다.</p>
@@ -600,7 +600,7 @@ export default function BranchOrderApp() {
               {items
                 .filter((item) => item.quantity > 0)
                 .map((item) => (
-                  <div key={item.barcode} className="rounded-lg border border-slate-200 p-4">
+                  <div key={item.barcode} className="rounded-lg border border-slate-200 bg-slate-50/80 p-4">
                     <div className="grid gap-3 sm:grid-cols-[1fr_2fr_1fr_auto_1fr] sm:items-center">
                         <div>
                           <p className="m-0 text-xs font-semibold text-slate-500">상품코드</p>
@@ -624,7 +624,7 @@ export default function BranchOrderApp() {
                           <div className="mt-1 flex items-center gap-2">
                             <button
                               aria-label={`${item.productName} 수량 줄이기`}
-                              className={`min-h-12 min-w-12 border border-slate-300 bg-white px-4 py-3 text-xl font-bold disabled:bg-slate-100 ${FOCUS_VISIBLE_CLASS}`}
+                              className={`min-h-12 min-w-12 rounded-lg border-2 border-slate-400 bg-white px-4 py-3 text-xl font-bold shadow-sm disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 ${FOCUS_VISIBLE_CLASS}`}
                               disabled={isClosed}
                               type="button"
                               onClick={() => updateItemQuantity(item.barcode, item.quantity - 1)}
@@ -636,7 +636,7 @@ export default function BranchOrderApp() {
                             </span>
                             <button
                               aria-label={`${item.productName} 수량 늘리기`}
-                              className={`min-h-12 min-w-12 border border-slate-300 bg-white px-4 py-3 text-xl font-bold disabled:bg-slate-100 ${FOCUS_VISIBLE_CLASS}`}
+                              className={`min-h-12 min-w-12 rounded-lg border-2 border-slate-900 bg-slate-900 px-4 py-3 text-xl font-bold text-white shadow-sm disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 ${FOCUS_VISIBLE_CLASS}`}
                               disabled={isClosed}
                               type="button"
                               onClick={() => updateItemQuantity(item.barcode, item.quantity + 1)}
@@ -664,7 +664,7 @@ export default function BranchOrderApp() {
           )}
         </div>
 
-        <div className="rounded-lg bg-white p-5 shadow-sm">
+        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           {submitError ? <p className="m-0 text-red-700">{submitError}</p> : null}
           {submitNotice ? <p className="m-0 text-teal-700">{submitNotice}</p> : null}
 
@@ -675,7 +675,7 @@ export default function BranchOrderApp() {
                 지사: {selectedBranch?.name ?? "-"} / 상품 {totals.lineItemCount}종 / 총 수량{" "}
                 {totals.totalQuantity} / 합계 금액 {formatCurrency(totals.totalAmount)}
               </p>
-              <div className="overflow-hidden rounded-lg border border-slate-200">
+              <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
                 {items
                   .filter((item) => item.quantity > 0)
                   .map((item) => (
@@ -720,7 +720,7 @@ export default function BranchOrderApp() {
               </div>
               <div className="flex flex-col gap-3 sm:flex-row">
                 <button
-                  className={`w-full border border-slate-300 bg-white px-5 py-4 text-lg font-semibold disabled:bg-slate-100 sm:w-auto ${FOCUS_VISIBLE_CLASS}`}
+                  className={`w-full rounded-lg border-2 border-slate-400 bg-white px-5 py-4 text-lg font-semibold shadow-sm disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 sm:w-auto ${FOCUS_VISIBLE_CLASS}`}
                   disabled={submitPending}
                   type="button"
                   onClick={() => setConfirmingSubmit(false)}
@@ -728,7 +728,7 @@ export default function BranchOrderApp() {
                   다시 보기
                 </button>
                 <button
-                  className={`w-full bg-teal-700 px-5 py-4 text-lg font-semibold text-white disabled:bg-slate-300 sm:w-auto ${FOCUS_VISIBLE_CLASS}`}
+                  className={`w-full rounded-lg bg-teal-700 px-5 py-4 text-lg font-semibold text-white shadow-sm disabled:bg-slate-300 sm:w-auto ${FOCUS_VISIBLE_CLASS}`}
                   disabled={!canSubmit}
                   type="button"
                   onClick={submitOrder}
@@ -743,7 +743,7 @@ export default function BranchOrderApp() {
             </div>
           ) : (
             <button
-              className={`w-full bg-teal-700 px-5 py-4 text-lg font-semibold text-white disabled:bg-slate-300 ${FOCUS_VISIBLE_CLASS}`}
+              className={`w-full rounded-lg bg-teal-700 px-5 py-4 text-lg font-semibold text-white shadow-sm disabled:bg-slate-300 ${FOCUS_VISIBLE_CLASS}`}
               disabled={!canSubmit}
               type="button"
               onClick={() => setConfirmingSubmit(true)}

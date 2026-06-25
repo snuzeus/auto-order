@@ -405,10 +405,10 @@ export default function AdminDashboard() {
           </button>
         </header>
 
-        <section className="rounded-lg bg-white p-4 shadow-sm sm:p-5">
+        <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
           <button
             aria-expanded={isDatePanelOpen}
-            className={`flex w-full items-center justify-between gap-3 text-left ${FOCUS_VISIBLE_CLASS}`}
+            className={`flex w-full items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-left ${FOCUS_VISIBLE_CLASS}`}
             type="button"
             onClick={() => setIsDatePanelOpen((current) => !current)}
           >
@@ -424,7 +424,7 @@ export default function AdminDashboard() {
           </button>
 
           {isDatePanelOpen ? (
-            <div className="mt-4">
+            <div className="mt-4 rounded-lg border border-slate-200 bg-white px-3 py-3">
               <p className="m-0 text-sm text-slate-600">
                 오늘과 어제 주문 현황을 확인하고, 마감된 날짜는 공급처 ZIP을 다시 다운로드할 수 있습니다.
               </p>
@@ -434,7 +434,7 @@ export default function AdminDashboard() {
                 className={`min-h-12 rounded-lg border px-4 py-3 text-base font-bold ${FOCUS_VISIBLE_CLASS} ${
                   orderDate === todayDate
                     ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-300 bg-white text-slate-900"
+                    : "border-slate-300 bg-slate-50 text-slate-900 hover:bg-white"
                 }`}
                 disabled={loading || actionPending}
                 type="button"
@@ -447,7 +447,7 @@ export default function AdminDashboard() {
                 className={`min-h-12 rounded-lg border px-4 py-3 text-base font-bold ${FOCUS_VISIBLE_CLASS} ${
                   orderDate === yesterdayDate
                     ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-300 bg-white text-slate-900"
+                    : "border-slate-300 bg-slate-50 text-slate-900 hover:bg-white"
                 }`}
                 disabled={loading || actionPending}
                 type="button"
@@ -471,10 +471,10 @@ export default function AdminDashboard() {
           </p>
         ) : null}
 
-        <section className="rounded-lg bg-white p-4 shadow-sm sm:p-5">
+        <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
           <button
             aria-expanded={isClosingPanelOpen}
-            className={`flex w-full items-center justify-between gap-3 text-left ${FOCUS_VISIBLE_CLASS}`}
+            className={`flex w-full items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-left ${FOCUS_VISIBLE_CLASS}`}
             type="button"
             onClick={() => setIsClosingPanelOpen((current) => !current)}
           >
@@ -490,7 +490,7 @@ export default function AdminDashboard() {
           </button>
 
           {isClosingPanelOpen ? (
-            <div className="mt-4">
+            <div className="mt-4 rounded-lg border border-slate-200 bg-white px-3 py-3">
               <p className="m-0 text-sm text-slate-600">
                 자동 마감은 매일 오후 2시 기준으로 실행되고, 수동 마감은 관리자가 직접 마감합니다.
               </p>
@@ -502,8 +502,8 @@ export default function AdminDashboard() {
               aria-pressed={closingMode === "auto_14"}
               className={`min-h-20 rounded-lg border px-4 py-4 text-left ${FOCUS_VISIBLE_CLASS} ${
                 closingMode === "auto_14"
-                  ? "border-teal-600 bg-teal-50 text-teal-950"
-                  : "border-slate-200 bg-white text-slate-900"
+                  ? "border-2 border-teal-600 bg-teal-50 text-teal-950"
+                  : "border border-slate-300 bg-slate-50 text-slate-900 hover:bg-white"
               }`}
               disabled={settingsLoading || settingsPending}
               type="button"
@@ -518,8 +518,8 @@ export default function AdminDashboard() {
               aria-pressed={closingMode === "manual"}
               className={`min-h-20 rounded-lg border px-4 py-4 text-left ${FOCUS_VISIBLE_CLASS} ${
                 closingMode === "manual"
-                  ? "border-slate-900 bg-slate-50 text-slate-950"
-                  : "border-slate-200 bg-white text-slate-900"
+                  ? "border-2 border-slate-900 bg-slate-50 text-slate-950"
+                  : "border border-slate-300 bg-slate-50 text-slate-900 hover:bg-white"
               }`}
               disabled={settingsLoading || settingsPending}
               type="button"
@@ -538,7 +538,7 @@ export default function AdminDashboard() {
           ) : null}
         </section>
 
-        <section className="rounded-lg bg-white p-4 shadow-sm sm:p-5">
+        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <h2 className="m-0 text-2xl font-bold">상품 마스터 업로드</h2>
@@ -559,7 +559,7 @@ export default function AdminDashboard() {
               <input
                 ref={fileInputRef}
                 accept=".xlsx,.xlsm"
-                className={`block w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm text-slate-900 file:mr-4 file:rounded-md file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white ${FOCUS_VISIBLE_CLASS}`}
+                className={`block w-full rounded-lg border-2 border-slate-400 bg-slate-50 px-3 py-3 text-sm text-slate-900 file:mr-4 file:rounded-md file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-500 ${FOCUS_VISIBLE_CLASS}`}
                 disabled={uploadPending}
                 id="product-master-file"
                 name="file"
@@ -568,7 +568,7 @@ export default function AdminDashboard() {
               />
             </div>
             <button
-              className={`min-h-12 rounded-lg bg-slate-900 px-5 py-3 text-base font-bold text-white disabled:bg-slate-300 ${FOCUS_VISIBLE_CLASS}`}
+              className={`min-h-12 rounded-lg bg-slate-900 px-5 py-3 text-base font-bold text-white shadow-sm disabled:bg-slate-300 ${FOCUS_VISIBLE_CLASS}`}
               disabled={uploadPending || !uploadFile}
               type="submit"
             >
@@ -615,25 +615,25 @@ export default function AdminDashboard() {
         {!loading && status ? (
           <>
             <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-4">
-              <div className="rounded-lg bg-white p-4 shadow-sm sm:p-5">
+              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                 <p className="m-0 text-sm text-slate-600">제출 지점</p>
                 <p className="mt-1 text-2xl font-bold sm:mt-2 sm:text-3xl">
                   {status.summary.submittedBranchCount}
                 </p>
               </div>
-              <div className="rounded-lg bg-white p-4 shadow-sm sm:p-5">
+              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                 <p className="m-0 text-sm text-slate-600">미제출 지점</p>
                 <p className="mt-1 text-2xl font-bold sm:mt-2 sm:text-3xl">
                   {status.summary.unsubmittedBranchNames.length}
                 </p>
               </div>
-              <div className="rounded-lg bg-white p-4 shadow-sm sm:p-5">
+              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                 <p className="m-0 text-sm text-slate-600">총 품목 수</p>
                 <p className="mt-1 text-2xl font-bold sm:mt-2 sm:text-3xl">
                   {status.summary.totalItemCount}
                 </p>
               </div>
-              <div className="rounded-lg bg-white p-4 shadow-sm sm:p-5">
+              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                 <p className="m-0 text-sm text-slate-600">총 수량</p>
                 <p className="mt-1 text-2xl font-bold sm:mt-2 sm:text-3xl">
                   {status.summary.totalQuantity}
@@ -642,7 +642,7 @@ export default function AdminDashboard() {
             </div>
 
             <div className="grid gap-2 sm:gap-3 md:grid-cols-1">
-              <div className="rounded-lg bg-white p-4 shadow-sm sm:p-5">
+              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                 <p className="m-0 text-sm text-slate-600">공급처 수</p>
                 <p className="mt-1 text-2xl font-bold sm:mt-2 sm:text-3xl">
                   {status.summary.supplierCount}
@@ -650,7 +650,7 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            <div className="rounded-lg bg-white p-4 shadow-sm sm:p-5">
+            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
               <div className="grid gap-2 sm:grid-cols-3 sm:gap-3">
                 <button
                   className={`min-h-12 bg-red-700 px-4 py-3 text-base font-bold text-white disabled:bg-slate-300 sm:min-h-14 sm:px-5 sm:py-4 sm:text-lg ${FOCUS_VISIBLE_CLASS}`}
@@ -661,7 +661,7 @@ export default function AdminDashboard() {
                   {actionPending && actionMode === "close" ? "마감 처리 중..." : "마감 확인"}
                 </button>
                 <button
-                  className={`min-h-12 border border-slate-300 bg-white px-4 py-3 text-base font-bold text-slate-900 disabled:bg-slate-100 disabled:text-slate-400 sm:min-h-14 sm:px-5 sm:py-4 sm:text-lg ${FOCUS_VISIBLE_CLASS}`}
+                  className={`min-h-12 border-2 border-slate-400 bg-white px-4 py-3 text-base font-bold text-slate-900 shadow-sm disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 sm:min-h-14 sm:px-5 sm:py-4 sm:text-lg ${FOCUS_VISIBLE_CLASS}`}
                   disabled={!canStartCancel}
                   type="button"
                   onClick={() => setActionMode("cancel")}
@@ -670,7 +670,7 @@ export default function AdminDashboard() {
                 </button>
                 {canDownloadZip ? (
                   <a
-                    className={`flex min-h-12 items-center justify-center border border-slate-300 bg-white px-4 py-3 text-center text-base font-bold text-slate-900 sm:min-h-14 sm:px-5 sm:py-4 sm:text-lg ${FOCUS_VISIBLE_CLASS}`}
+                    className={`flex min-h-12 items-center justify-center border-2 border-slate-400 bg-white px-4 py-3 text-center text-base font-bold text-slate-900 shadow-sm sm:min-h-14 sm:px-5 sm:py-4 sm:text-lg ${FOCUS_VISIBLE_CLASS}`}
                     href={downloadHref}
                   >
                     공급처 ZIP 다운로드
@@ -678,7 +678,7 @@ export default function AdminDashboard() {
                 ) : (
                   <button
                     aria-disabled="true"
-                    className={`min-h-12 border border-slate-300 bg-slate-100 px-4 py-3 text-base font-bold text-slate-400 sm:min-h-14 sm:px-5 sm:py-4 sm:text-lg ${FOCUS_VISIBLE_CLASS}`}
+                    className={`min-h-12 border border-slate-200 bg-slate-100 px-4 py-3 text-base font-bold text-slate-400 sm:min-h-14 sm:px-5 sm:py-4 sm:text-lg ${FOCUS_VISIBLE_CLASS}`}
                     disabled
                     type="button"
                   >
@@ -733,7 +733,7 @@ export default function AdminDashboard() {
                 </div>
                 <div className="mt-4 flex flex-col gap-3 sm:flex-row">
                   <button
-                    className={`min-h-14 flex-1 border border-slate-300 bg-white px-5 py-4 text-lg font-bold disabled:bg-slate-100 ${FOCUS_VISIBLE_CLASS}`}
+                    className={`min-h-14 flex-1 border-2 border-slate-400 bg-white px-5 py-4 text-lg font-bold shadow-sm disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 ${FOCUS_VISIBLE_CLASS}`}
                     disabled={actionPending}
                     type="button"
                     onClick={() => setActionMode("none")}
@@ -760,7 +760,7 @@ export default function AdminDashboard() {
                 </p>
                 <div className="mt-4 flex flex-col gap-3 sm:flex-row">
                   <button
-                    className={`min-h-14 flex-1 border border-slate-300 bg-white px-5 py-4 text-lg font-bold disabled:bg-slate-100 ${FOCUS_VISIBLE_CLASS}`}
+                    className={`min-h-14 flex-1 border-2 border-slate-400 bg-white px-5 py-4 text-lg font-bold shadow-sm disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 ${FOCUS_VISIBLE_CLASS}`}
                     disabled={actionPending}
                     type="button"
                     onClick={() => setActionMode("none")}
@@ -779,11 +779,11 @@ export default function AdminDashboard() {
               </div>
             ) : null}
 
-            <div className="rounded-lg bg-white p-4 shadow-sm sm:p-5">
+            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
               <div className="flex items-center justify-between gap-3">
                 <h2 className="m-0 text-xl font-bold sm:text-2xl">지점별 상태</h2>
                 <button
-                  className={`border border-slate-300 bg-white px-3 py-2 text-sm font-semibold disabled:bg-slate-100 sm:px-4 sm:py-3 sm:text-base ${FOCUS_VISIBLE_CLASS}`}
+                  className={`rounded-lg border-2 border-slate-400 bg-white px-3 py-2 text-sm font-semibold shadow-sm disabled:border-slate-200 disabled:bg-slate-100 sm:px-4 sm:py-3 sm:text-base ${FOCUS_VISIBLE_CLASS}`}
                   disabled={loading || actionPending}
                   type="button"
                   onClick={() => {
