@@ -12,6 +12,10 @@ type CloseOrdersRpcRow = {
   close_orders_for_date: string | null;
 };
 
+function logAutoClose(event: string, details: Record<string, unknown> = {}) {
+  console.info("[auto-close]", event, details);
+}
+
 function todayInSeoul(): string {
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Seoul",
@@ -33,10 +37,14 @@ export async function GET(request: NextRequest) {
   const bearerToken = authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : "";
 
   if (!expectedSecret) {
+    logAutoClose("missing_cron_secret");
     return jsonError("자동 마감 보안 설정이 없습니다.", 500);
   }
 
   if (bearerToken !== expectedSecret) {
+    logAutoClose("unauthorized", {
+      hasAuthorizationHeader: authHeader !== "",
+    });
     return jsonError("자동 마감 권한을 확인하지 못했습니다.", 401);
   }
 
@@ -48,23 +56,36 @@ export async function GET(request: NextRequest) {
     .maybeSingle();
 
   if (settingsError) {
+    logAutoClose("settings_error", {
+      message: settingsError.message,
+    });
     return jsonError("마감 설정을 불러오지 못했습니다.", 500);
   }
 
-  if (((settings as ClosingSettingsRow | null)?.mode ?? "manual") !== "auto_14") {
+  const mode = (settings as ClosingSettingsRow | null)?.mode ?? "manual";
+
+  if (mode !== "auto_14") {
+    logAutoClose("skipped_manual_mode", { mode });
     return NextResponse.json({
       skipped: true,
       reason: "manual_mode",
+      mode,
     });
   }
 
   const orderDate = todayInSeoul();
+  logAutoClose("started", { orderDate, mode });
+
   const { data, error } = await supabase.rpc("close_orders_for_date", {
     p_order_date: orderDate,
     p_admin_id: null,
   });
 
   if (error) {
+    logAutoClose("rpc_skipped_or_failed", {
+      orderDate,
+      message: error.message,
+    });
     return NextResponse.json({
       skipped: true,
       orderDate,
@@ -76,6 +97,11 @@ export async function GET(request: NextRequest) {
     typeof data === "string"
       ? data
       : ((data as CloseOrdersRpcRow | null)?.close_orders_for_date ?? null);
+
+  logAutoClose("closed", {
+    orderDate,
+    closingBatchId,
+  });
 
   return NextResponse.json({
     skipped: false,
