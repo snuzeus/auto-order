@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, ty
 import { useRouter } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/browser";
+import MasterDataPanel from "./MasterDataPanel";
 
 type AdminStatus = {
   orderDate: string;
@@ -537,6 +538,8 @@ export default function AdminDashboard() {
             </div>
           ) : null}
         </section>
+
+        <MasterDataPanel />
 
         <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">

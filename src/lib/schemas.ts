@@ -60,3 +60,25 @@ export const closeDateSchema = z.object({
 export const closingModeSchema = z.object({
   mode: z.enum(["manual", "auto_14"]),
 });
+
+export const adminBranchUpdateSchema = z.object({
+  type: z.literal("branch"),
+  id: z.string().uuid(),
+  code: requiredTrimmedText("code"),
+  name: requiredTrimmedText("name"),
+  deliveryAddress: requiredTrimmedText("deliveryAddress"),
+  recipientName: requiredTrimmedText("recipientName"),
+  phone: requiredTrimmedText("phone"),
+  isActive: z.boolean(),
+});
+
+export const adminSupplierUpdateSchema = z.object({
+  type: z.literal("supplier"),
+  currentName: requiredTrimmedText("currentName"),
+  nextName: requiredTrimmedText("nextName"),
+});
+
+export const adminMasterDataUpdateSchema = z.discriminatedUnion("type", [
+  adminBranchUpdateSchema,
+  adminSupplierUpdateSchema,
+]);
