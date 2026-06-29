@@ -268,5 +268,19 @@ export async function POST(request: Request) {
     return jsonError("상품 마스터 저장 중 오류가 발생했습니다.", 500);
   }
 
+  const supplierRows = Array.from(
+    new Set(rowsToUpsert.map((row) => row.supplier_name.trim()).filter(Boolean)),
+  ).map((name) => ({
+    name,
+    is_active: true,
+    updated_at: new Date().toISOString(),
+  }));
+
+  if (supplierRows.length > 0) {
+    await supabase.from("supplier_directory").upsert(supplierRows, {
+      onConflict: "name",
+    });
+  }
+
   return NextResponse.json({ importedCount: rowsToUpsert.length });
 }

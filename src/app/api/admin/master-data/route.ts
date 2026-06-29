@@ -173,6 +173,22 @@ function mapSupplier(row: SupplierDirectoryRow, productCounts: Map<string, numbe
   };
 }
 
+function mapSuppliersFromProducts(productCounts: Map<string, number>) {
+  return Array.from(productCounts.entries())
+    .map(([name, productCount]) => ({
+      id: name,
+      businessRegistrationNumber: "",
+      name,
+      representativeName: "",
+      phone: "",
+      email: "",
+      address: "",
+      isActive: true,
+      productCount,
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name, "ko"));
+}
+
 async function readWorkbookFromRequest(request: NextRequest) {
   let formData: FormData;
 
@@ -253,17 +269,19 @@ export async function GET() {
       supabase.from("products").select("supplier_name").eq("is_active", true),
     ]);
 
-  if (branchesError || suppliersError || productsError) {
+  if (productsError) {
     return jsonError("마스터 정보를 불러오지 못했습니다.", 500);
   }
 
   const productCounts = countProductSuppliers((products ?? []) as ProductSupplierCountRow[]);
 
   return NextResponse.json({
-    branches: ((branches ?? []) as BranchRow[]).map(mapBranch),
-    suppliers: ((suppliers ?? []) as SupplierDirectoryRow[]).map((supplier) =>
-      mapSupplier(supplier, productCounts),
-    ),
+    branches: branchesError ? [] : ((branches ?? []) as BranchRow[]).map(mapBranch),
+    suppliers: suppliersError
+      ? mapSuppliersFromProducts(productCounts)
+      : ((suppliers ?? []) as SupplierDirectoryRow[]).map((supplier) =>
+          mapSupplier(supplier, productCounts),
+        ),
   });
 }
 
