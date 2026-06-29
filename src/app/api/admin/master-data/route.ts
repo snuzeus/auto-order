@@ -468,12 +468,33 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = createServiceClient();
-    const { error } = await supabase.from("branches").upsert(rowsToUpsert, {
-      onConflict: "business_registration_number",
-    });
 
-    if (error) {
-      return jsonError("지사 엑셀을 저장하지 못했습니다. 0007_master_data_uploads.sql을 실행했는지 확인해 주세요.", 500);
+    for (const row of rowsToUpsert) {
+      const { data: updatedRows, error: updateError } = await supabase
+        .from("branches")
+        .update(row)
+        .eq("business_registration_number", row.business_registration_number)
+        .select("id");
+
+      if (updateError) {
+        return jsonError(
+          `지사 엑셀을 저장하지 못했습니다. 0007_master_data_uploads.sql을 실행했는지 확인해 주세요. (${updateError.message})`,
+          500,
+        );
+      }
+
+      if ((updatedRows ?? []).length > 0) {
+        continue;
+      }
+
+      const { error: insertError } = await supabase.from("branches").insert(row);
+
+      if (insertError) {
+        return jsonError(
+          `지사 엑셀을 저장하지 못했습니다. 지사 코드나 사업자등록번호 중복을 확인해 주세요. (${insertError.message})`,
+          insertError.code === "23505" ? 409 : 500,
+        );
+      }
     }
 
     return NextResponse.json({ importedCount: rowsToUpsert.length });
