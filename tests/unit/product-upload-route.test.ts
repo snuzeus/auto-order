@@ -205,7 +205,7 @@ describe("POST /api/admin/products/upload", () => {
 
     expect(response.status).toBe(400);
     expect(body).toEqual({
-      error: "필수 헤더가 없습니다: 상품명, 납품 거래처명",
+      error: "필수 헤더가 없습니다: 상품명",
     });
     expect(fromMock).not.toHaveBeenCalled();
   });
