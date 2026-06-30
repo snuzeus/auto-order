@@ -1,4 +1,2 @@
-drop index if exists public.supplier_directory_business_registration_number_key;
-
 create unique index if not exists supplier_directory_business_registration_number_idx
 on public.supplier_directory (business_registration_number);
