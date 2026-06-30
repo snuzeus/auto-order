@@ -94,6 +94,48 @@ function readHeaderNames(worksheet: ExcelJS.Worksheet): string[] {
   );
 }
 
+function readHeaderNamesAtRow(worksheet: ExcelJS.Worksheet, rowNumber: number): string[] {
+  const headerRow = worksheet.getRow(rowNumber);
+  const columnCount = Math.max(headerRow.cellCount, headerRow.actualCellCount);
+
+  return Array.from({ length: columnCount }, (_, index) =>
+    getCellText(headerRow.getCell(index + 1).value),
+  );
+}
+
+function findProductMasterHeader(worksheet: ExcelJS.Worksheet): {
+  headers: string[];
+  headerRowNumber: number;
+  missingHeaders: string[];
+} {
+  let fallbackHeaders = readHeaderNames(worksheet);
+  let fallbackMissingHeaders = getMissingRequiredProductMasterHeaders(fallbackHeaders);
+
+  for (let rowNumber = 1; rowNumber <= Math.min(10, worksheet.rowCount); rowNumber += 1) {
+    const headers = readHeaderNamesAtRow(worksheet, rowNumber);
+    const missingHeaders = getMissingRequiredProductMasterHeaders(headers);
+
+    if (missingHeaders.length < fallbackMissingHeaders.length) {
+      fallbackHeaders = headers;
+      fallbackMissingHeaders = missingHeaders;
+    }
+
+    if (missingHeaders.length === 0) {
+      return {
+        headers,
+        headerRowNumber: rowNumber,
+        missingHeaders,
+      };
+    }
+  }
+
+  return {
+    headers: fallbackHeaders,
+    headerRowNumber: 1,
+    missingHeaders: fallbackMissingHeaders,
+  };
+}
+
 function buildRowObject(headers: string[], row: ExcelJS.Row): Record<string, unknown> {
   return headers.reduce<Record<string, unknown>>((record, header, index) => {
     if (!header) {
@@ -167,8 +209,7 @@ export async function POST(request: Request) {
     return jsonError("엑셀 시트를 찾을 수 없습니다.", 400);
   }
 
-  const headers = readHeaderNames(worksheet);
-  const missingHeaders = getMissingRequiredProductMasterHeaders(headers);
+  const { headers, headerRowNumber, missingHeaders } = findProductMasterHeader(worksheet);
 
   if (missingHeaders.length > 0) {
     return jsonError(`필수 헤더가 없습니다: ${missingHeaders.join(", ")}`, 400);
@@ -178,7 +219,7 @@ export async function POST(request: Request) {
   const rowsToUpsert: ProductUpsertRow[] = [];
   const seenBarcodes = new Set<string>();
 
-  for (let rowNumber = 2; rowNumber <= worksheet.rowCount; rowNumber += 1) {
+  for (let rowNumber = headerRowNumber + 1; rowNumber <= worksheet.rowCount; rowNumber += 1) {
     const worksheetRow = worksheet.getRow(rowNumber);
     const rowObject = buildRowObject(headers, worksheetRow);
 
@@ -225,6 +266,20 @@ export async function POST(request: Request) {
 
   if (error) {
     return jsonError("상품 마스터 저장 중 오류가 발생했습니다.", 500);
+  }
+
+  const supplierRows = Array.from(
+    new Set(rowsToUpsert.map((row) => row.supplier_name.trim()).filter(Boolean)),
+  ).map((name) => ({
+    name,
+    is_active: true,
+    updated_at: new Date().toISOString(),
+  }));
+
+  if (supplierRows.length > 0) {
+    await supabase.from("supplier_directory").upsert(supplierRows, {
+      onConflict: "name",
+    });
   }
 
   return NextResponse.json({ importedCount: rowsToUpsert.length });

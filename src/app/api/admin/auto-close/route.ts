@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { sendSupplierOrderEmails } from "@/lib/email/supplier-order-email";
 import { createServiceClient } from "@/lib/supabase/service";
 
 export const dynamic = "force-dynamic";
@@ -103,9 +104,13 @@ export async function GET(request: NextRequest) {
     closingBatchId,
   });
 
+  const emailResult = await sendSupplierOrderEmails(supabase, orderDate);
+  logAutoClose("email_result", emailResult);
+
   return NextResponse.json({
     skipped: false,
     orderDate,
     closingBatchId,
+    emailResult,
   });
 }

@@ -1,9 +1,27 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeProductMasterRow } from "@/lib/domain/product-master";
+import { getMissingRequiredProductMasterHeaders, normalizeProductMasterRow } from "@/lib/domain/product-master";
 
 describe("normalizeProductMasterRow", () => {
-  it("maps Korean headers to product fields and trims string values", () => {
+  it("maps the current product master format", () => {
+    expect(
+      normalizeProductMasterRow({
+        상품코드: " 88010001 ",
+        상품명: " 생수 ",
+        납품처: " 샘물유통 ",
+        계약단가: " 1,250 ",
+      }),
+    ).toEqual({
+      barcode: "88010001",
+      productCode: "88010001",
+      name: "생수",
+      spec: "",
+      supplierName: "샘물유통",
+      unitPrice: 1250,
+    });
+  });
+
+  it("maps the older upload format", () => {
     expect(
       normalizeProductMasterRow({
         "바코드 번호": " 88010001 ",
@@ -11,27 +29,7 @@ describe("normalizeProductMasterRow", () => {
         상품명: " 생수 ",
         규격: " 500ml ",
         "납품 거래처명": " 샘물유통 ",
-        단가: " 1250.5 ",
-      }),
-    ).toEqual({
-      barcode: "88010001",
-      productCode: "P-001",
-      name: "생수",
-      spec: "500ml",
-      supplierName: "샘물유통",
-      unitPrice: 1250.5,
-    });
-  });
-
-  it("defaults an empty unit price to zero", () => {
-    expect(
-      normalizeProductMasterRow({
-        "바코드 번호": "88010001",
-        상품코드: "P-001",
-        상품명: "생수",
-        규격: "",
-        "납품 거래처명": "샘물유통",
-        단가: "   ",
+        공급가: " 1250.5 ",
       }),
     ).toEqual({
       barcode: "88010001",
@@ -39,33 +37,41 @@ describe("normalizeProductMasterRow", () => {
       name: "생수",
       spec: "",
       supplierName: "샘물유통",
-      unitPrice: 0,
+      unitPrice: 1250.5,
     });
   });
 
-  it("throws when a required field is blank", () => {
-    expect(() =>
+  it("defaults a blank supplier to an unspecified supplier", () => {
+    expect(
       normalizeProductMasterRow({
-        "바코드 번호": "88010001",
-        상품코드: "P-001",
+        상품코드: "88010001",
         상품명: "생수",
-        규격: "500ml",
-        "납품 거래처명": "   ",
-        단가: "1000",
+        납품처: "   ",
+        계약단가: "1000",
       }),
-    ).toThrowError("납품 거래처명 값이 없습니다.");
+    ).toMatchObject({
+      supplierName: "납품처 미지정",
+    });
   });
 
   it("throws when unit price is not numeric", () => {
     expect(() =>
       normalizeProductMasterRow({
-        "바코드 번호": "88010001",
-        상품코드: "P-001",
+        상품코드: "88010001",
         상품명: "생수",
-        규격: "500ml",
-        "납품 거래처명": "샘물유통",
-        단가: "천원",
+        납품처: "샘물유통",
+        계약단가: "천원",
       }),
     ).toThrowError("단가를 숫자로 입력해 주세요.");
+  });
+});
+
+describe("getMissingRequiredProductMasterHeaders", () => {
+  it("accepts the current product master headers", () => {
+    expect(getMissingRequiredProductMasterHeaders(["구분", "상품코드", "상품명", "납품처", "계약단가"])).toEqual([]);
+  });
+
+  it("requires product code and product name", () => {
+    expect(getMissingRequiredProductMasterHeaders(["상품코드", "계약단가"])).toEqual(["상품명"]);
   });
 });

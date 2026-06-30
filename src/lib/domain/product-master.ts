@@ -13,17 +13,22 @@ export const PRODUCT_MASTER_HEADERS = [
   "상품명",
   "규격",
   "납품 거래처명",
-  "단가",
+  "입수량",
+  "공급가",
+  "납품처",
+  "계약단가",
 ] as const;
 
-export const REQUIRED_PRODUCT_MASTER_HEADERS = [
-  "바코드 번호",
-  "상품코드",
-  "상품명",
-  "납품 거래처명",
-] as const;
+export const REQUIRED_PRODUCT_MASTER_FIELDS = ["상품코드", "상품명"] as const;
 
-type ProductMasterHeader = (typeof PRODUCT_MASTER_HEADERS)[number];
+const HEADER_ALIASES = {
+  barcode: ["바코드 번호", "바코드", "상품코드"],
+  productCode: ["상품코드", "바코드 번호", "바코드"],
+  name: ["상품명"],
+  spec: ["규격", "입수량"],
+  supplierName: ["납품 거래처명", "납품처", "거래처명", "공급처"],
+  unitPrice: ["공급가", "계약단가", "단가"],
+} as const;
 
 type RichTextValue = {
   richText?: Array<{ text?: string }>;
@@ -92,31 +97,61 @@ function parseUnitPrice(value: unknown): number {
   return unitPrice;
 }
 
+function readFirstValue(row: Record<string, unknown>, aliases: readonly string[]): string {
+  for (const alias of aliases) {
+    const value = cellValueToText(row[alias]);
+
+    if (value) {
+      return value;
+    }
+  }
+
+  return "";
+}
+
+function hasHeader(headers: string[], aliases: readonly string[]): boolean {
+  return aliases.some((alias) => headers.includes(alias));
+}
+
 export function isEmptyProductMasterRow(row: Record<string, unknown>): boolean {
   return Object.values(row).every((value) => cellValueToText(value) === "");
 }
 
 export function getMissingRequiredProductMasterHeaders(headers: string[]): string[] {
-  return REQUIRED_PRODUCT_MASTER_HEADERS.filter((header) => !headers.includes(header));
+  return REQUIRED_PRODUCT_MASTER_FIELDS.filter((field) => {
+    if (field === "상품코드") {
+      return !hasHeader(headers, HEADER_ALIASES.productCode);
+    }
+
+    return !hasHeader(headers, HEADER_ALIASES.name);
+  });
 }
 
 export function normalizeProductMasterRow(row: Record<string, unknown>): ProductMasterUploadRow {
-  for (const header of REQUIRED_PRODUCT_MASTER_HEADERS) {
-    if (!cellValueToText(row[header])) {
-      throw new Error(`${header} 값이 없습니다.`);
-    }
+  const productCode = readFirstValue(row, HEADER_ALIASES.productCode);
+  const name = readFirstValue(row, HEADER_ALIASES.name);
+
+  if (!productCode) {
+    throw new Error("상품코드 값이 없습니다.");
   }
 
+  if (!name) {
+    throw new Error("상품명 값이 없습니다.");
+  }
+
+  const barcode = readFirstValue(row, HEADER_ALIASES.barcode) || productCode;
+  const supplierName = readFirstValue(row, HEADER_ALIASES.supplierName) || "납품처 미지정";
+
   return {
-    barcode: cellValueToText(row["바코드 번호"]),
-    productCode: cellValueToText(row["상품코드"]),
-    name: cellValueToText(row["상품명"]),
-    spec: cellValueToText(row["규격"]),
-    supplierName: cellValueToText(row["납품 거래처명"]),
-    unitPrice: parseUnitPrice(row["단가"]),
+    barcode,
+    productCode,
+    name,
+    spec: "",
+    supplierName,
+    unitPrice: parseUnitPrice(readFirstValue(row, HEADER_ALIASES.unitPrice)),
   };
 }
 
-export function normalizeProductMasterHeader(header: ProductMasterHeader): string {
+export function normalizeProductMasterHeader(header: string): string {
   return header;
 }

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, ty
 import { useRouter } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/browser";
+import MasterDataPanel from "./MasterDataPanel";
 
 type AdminStatus = {
   orderDate: string;
@@ -308,15 +309,27 @@ export default function AdminDashboard() {
         },
         body: JSON.stringify({ orderDate }),
       });
-      const data = (await response.json()) as { error?: string };
+      const data = (await response.json()) as {
+        error?: string;
+        emailResult?: {
+          sent: number;
+          skipped: Array<{ supplierName: string; reason: string }>;
+          failed: Array<{ supplierName: string; email: string; reason: string }>;
+        };
+      };
 
       if (!response.ok) {
         throw new Error(data.error ?? "요청을 처리하지 못했습니다.");
       }
 
+      const emailSummary =
+        endpoint === "/api/admin/close" && data.emailResult
+          ? ` 메일 발송: ${data.emailResult.sent}건, 제외: ${data.emailResult.skipped.length}건, 실패: ${data.emailResult.failed.length}건.`
+          : "";
+
       setNotice(
         endpoint === "/api/admin/close"
-          ? "마감 처리가 완료되었습니다."
+          ? `마감 처리가 완료되었습니다.${emailSummary}`
           : "마감 취소가 완료되었습니다.",
       );
       setActionMode("none");
@@ -537,6 +550,8 @@ export default function AdminDashboard() {
             </div>
           ) : null}
         </section>
+
+        <MasterDataPanel />
 
         <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -845,7 +860,7 @@ export default function AdminDashboard() {
                                     <div>
                                      <p className="m-0 text-base font-semibold">{item.productName}</p>
                                      <p className="mt-1 text-sm text-slate-600">
-                                        등록 상품 · {item.spec || "규격 없음"}
+                                        등록 상품
                                      </p>
                                       {item.memo ? (
                                         <p className="mt-1 text-sm text-slate-600">메모: {item.memo}</p>
