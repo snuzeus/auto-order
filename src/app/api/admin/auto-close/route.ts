@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { sendSupplierOrderEmails } from "@/lib/email/supplier-order-email";
+import { cleanupOrdersBeforeYesterday } from "@/lib/orders/cleanup-old-orders";
 import { createServiceClient } from "@/lib/supabase/service";
 
 export const dynamic = "force-dynamic";
@@ -64,6 +65,8 @@ export async function GET(request: NextRequest) {
   }
 
   const mode = (settings as ClosingSettingsRow | null)?.mode ?? "manual";
+  const cleanupResult = await cleanupOrdersBeforeYesterday(supabase);
+  logAutoClose("cleanup_result", cleanupResult);
 
   if (mode !== "auto_14") {
     logAutoClose("skipped_manual_mode", { mode });
@@ -71,6 +74,7 @@ export async function GET(request: NextRequest) {
       skipped: true,
       reason: "manual_mode",
       mode,
+      cleanupResult,
     });
   }
 
@@ -91,6 +95,7 @@ export async function GET(request: NextRequest) {
       skipped: true,
       orderDate,
       reason: error.message,
+      cleanupResult,
     });
   }
 
@@ -112,5 +117,6 @@ export async function GET(request: NextRequest) {
     orderDate,
     closingBatchId,
     emailResult,
+    cleanupResult,
   });
 }
