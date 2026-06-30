@@ -329,7 +329,7 @@ describe("POST /api/admin/products/upload", () => {
           barcode: "88010001",
           product_code: "P-001",
           name: "생수",
-          spec: "500ml",
+          spec: "",
           supplier_name: "샘물유통",
           unit_price: 1250,
           is_active: true,

@@ -848,7 +848,7 @@ export default function AdminDashboard() {
                                     <div>
                                      <p className="m-0 text-base font-semibold">{item.productName}</p>
                                      <p className="mt-1 text-sm text-slate-600">
-                                        등록 상품 · {item.spec || "규격 없음"}
+                                        등록 상품
                                      </p>
                                       {item.memo ? (
                                         <p className="mt-1 text-sm text-slate-600">메모: {item.memo}</p>

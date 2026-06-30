@@ -146,7 +146,7 @@ export function normalizeProductMasterRow(row: Record<string, unknown>): Product
     barcode,
     productCode,
     name,
-    spec: readFirstValue(row, HEADER_ALIASES.spec),
+    spec: "",
     supplierName,
     unitPrice: parseUnitPrice(readFirstValue(row, HEADER_ALIASES.unitPrice)),
   };

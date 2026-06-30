@@ -35,7 +35,7 @@ describe("normalizeProductMasterRow", () => {
       barcode: "88010001",
       productCode: "P-001",
       name: "생수",
-      spec: "500ml",
+      spec: "",
       supplierName: "샘물유통",
       unitPrice: 1250.5,
     });

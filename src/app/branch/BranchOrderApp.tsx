@@ -542,7 +542,7 @@ export default function BranchOrderApp() {
                 <div key={product.id} className="rounded-lg border border-teal-200 bg-white p-4 shadow-sm">
                   <p className="m-0 text-lg font-semibold">{product.name}</p>
                   <p className="mt-1 text-sm text-slate-600">
-                    바코드 {product.barcode} · 규격 {product.spec || "-"} · 납품처 {product.supplierName}
+                    바코드 {product.barcode} · 납품처 {product.supplierName}
                   </p>
                   <p className="mt-1 text-sm font-semibold text-slate-800">
                     상품코드 {product.productCode} · 공급가 {formatCurrency(product.unitPrice)}
@@ -611,7 +611,6 @@ export default function BranchOrderApp() {
                         <div>
                           <p className="m-0 text-xs font-semibold text-slate-500">상품명</p>
                           <p className="m-0 mt-1 text-base font-semibold">{item.productName}</p>
-                          <p className="m-0 mt-1 text-xs text-slate-500">{item.spec || "규격 없음"}</p>
                         </div>
                         <div>
                           <p className="m-0 text-xs font-semibold text-slate-500">공급가</p>
