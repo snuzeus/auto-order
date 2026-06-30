@@ -309,15 +309,27 @@ export default function AdminDashboard() {
         },
         body: JSON.stringify({ orderDate }),
       });
-      const data = (await response.json()) as { error?: string };
+      const data = (await response.json()) as {
+        error?: string;
+        emailResult?: {
+          sent: number;
+          skipped: Array<{ supplierName: string; reason: string }>;
+          failed: Array<{ supplierName: string; email: string; reason: string }>;
+        };
+      };
 
       if (!response.ok) {
         throw new Error(data.error ?? "요청을 처리하지 못했습니다.");
       }
 
+      const emailSummary =
+        endpoint === "/api/admin/close" && data.emailResult
+          ? ` 메일 발송: ${data.emailResult.sent}건, 제외: ${data.emailResult.skipped.length}건, 실패: ${data.emailResult.failed.length}건.`
+          : "";
+
       setNotice(
         endpoint === "/api/admin/close"
-          ? "마감 처리가 완료되었습니다."
+          ? `마감 처리가 완료되었습니다.${emailSummary}`
           : "마감 취소가 완료되었습니다.",
       );
       setActionMode("none");

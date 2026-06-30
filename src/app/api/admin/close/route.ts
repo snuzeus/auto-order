@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { requireAdmin } from "@/lib/auth/admin";
+import { sendSupplierOrderEmails } from "@/lib/email/supplier-order-email";
 import { closeDateSchema } from "@/lib/schemas";
 import { createServiceClient } from "@/lib/supabase/service";
 
@@ -66,5 +67,7 @@ export async function POST(request: NextRequest) {
     return jsonError("마감 처리 결과를 확인하지 못했습니다.", 500);
   }
 
-  return NextResponse.json({ closingBatchId });
+  const emailResult = await sendSupplierOrderEmails(supabase, parsed.data.orderDate);
+
+  return NextResponse.json({ closingBatchId, emailResult });
 }
