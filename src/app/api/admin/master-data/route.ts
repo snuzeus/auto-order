@@ -468,6 +468,20 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = createServiceClient();
+    const { error: deactivateError } = await supabase
+      .from("branches")
+      .update({
+        is_active: false,
+        updated_at: now,
+      })
+      .neq("id", "00000000-0000-0000-0000-000000000000");
+
+    if (deactivateError) {
+      return jsonError(
+        `지사 엑셀을 저장하지 못했습니다. 기존 지사 비활성화 중 오류가 발생했습니다. (${deactivateError.message})`,
+        500,
+      );
+    }
 
     for (const row of rowsToUpsert) {
       const { data: updatedRows, error: updateError } = await supabase
@@ -563,50 +577,27 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = createServiceClient();
+  const { error: deleteExistingSuppliersError } = await supabase
+    .from("supplier_directory")
+    .delete()
+    .neq("id", "00000000-0000-0000-0000-000000000000");
 
-  for (const row of rowsToUpsert) {
-    const { data: updatedRows, error: updateError } = await supabase
-      .from("supplier_directory")
-      .update(row)
-      .eq("business_registration_number", row.business_registration_number)
-      .select("id");
+  if (deleteExistingSuppliersError) {
+    return jsonError(
+      `납품처 엑셀을 저장하지 못했습니다. 기존 납품처 정리 중 오류가 발생했습니다. (${deleteExistingSuppliersError.message})`,
+      500,
+    );
+  }
 
-    if (updateError) {
-      return jsonError(
-        `납품처 엑셀을 저장하지 못했습니다. 0007_master_data_uploads.sql을 실행했는지 확인해 주세요. (${updateError.message})`,
-        500,
-      );
-    }
+  const { error: insertSuppliersError } = await supabase
+    .from("supplier_directory")
+    .insert(rowsToUpsert);
 
-    if ((updatedRows ?? []).length > 0) {
-      continue;
-    }
-
-    const { data: updatedByNameRows, error: updateByNameError } = await supabase
-      .from("supplier_directory")
-      .update(row)
-      .eq("name", row.name)
-      .select("id");
-
-    if (updateByNameError) {
-      return jsonError(
-        `납품처 엑셀을 저장하지 못했습니다. 기존 납품처명 갱신 중 오류가 발생했습니다. (${updateByNameError.message})`,
-        500,
-      );
-    }
-
-    if ((updatedByNameRows ?? []).length > 0) {
-      continue;
-    }
-
-    const { error: insertError } = await supabase.from("supplier_directory").insert(row);
-
-    if (insertError) {
-      return jsonError(
-        `납품처 엑셀을 저장하지 못했습니다. 사업자등록번호나 거래처명 중복을 확인해 주세요. (${insertError.message})`,
-        insertError.code === "23505" ? 409 : 500,
-      );
-    }
+  if (insertSuppliersError) {
+    return jsonError(
+      `납품처 엑셀을 저장하지 못했습니다. 엑셀 안의 사업자등록번호나 거래처명 중복을 확인해 주세요. (${insertSuppliersError.message})`,
+      insertSuppliersError.code === "23505" ? 409 : 500,
+    );
   }
 
   return NextResponse.json({ importedCount: rowsToUpsert.length });
