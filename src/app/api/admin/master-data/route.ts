@@ -582,6 +582,23 @@ export async function POST(request: NextRequest) {
       continue;
     }
 
+    const { data: updatedByNameRows, error: updateByNameError } = await supabase
+      .from("supplier_directory")
+      .update(row)
+      .eq("name", row.name)
+      .select("id");
+
+    if (updateByNameError) {
+      return jsonError(
+        `납품처 엑셀을 저장하지 못했습니다. 기존 납품처명 갱신 중 오류가 발생했습니다. (${updateByNameError.message})`,
+        500,
+      );
+    }
+
+    if ((updatedByNameRows ?? []).length > 0) {
+      continue;
+    }
+
     const { error: insertError } = await supabase.from("supplier_directory").insert(row);
 
     if (insertError) {
