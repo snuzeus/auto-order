@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 
 import { requireAdmin } from "@/lib/auth/admin";
+import { normalizeSupplierName } from "@/lib/domain/supplier-name";
 import { adminMasterDataUpdateSchema } from "@/lib/schemas";
 import { createServiceClient } from "@/lib/supabase/service";
 
@@ -534,7 +535,7 @@ export async function POST(request: NextRequest) {
     }
 
     const businessNumber = row["사업자등록번호"]?.trim() ?? "";
-    const name = row["거래처명"]?.trim() ?? "";
+    const name = normalizeSupplierName(row["거래처명"] ?? "");
 
     if (!businessNumber || !name) {
       validationErrors.push({

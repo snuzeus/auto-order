@@ -54,6 +54,19 @@ describe("normalizeProductMasterRow", () => {
     });
   });
 
+  it("normalizes the circled company marker in supplier names", () => {
+    expect(
+      normalizeProductMasterRow({
+        상품코드: "88010001",
+        상품명: "생수",
+        납품처: " ㈜샘물유통 ",
+        계약단가: "1000",
+      }),
+    ).toMatchObject({
+      supplierName: "(주)샘물유통",
+    });
+  });
+
   it("throws when unit price is not numeric", () => {
     expect(() =>
       normalizeProductMasterRow({

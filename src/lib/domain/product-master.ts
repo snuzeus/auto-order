@@ -1,3 +1,5 @@
+import { normalizeSupplierName } from "@/lib/domain/supplier-name";
+
 export type ProductMasterUploadRow = {
   barcode: string;
   productCode: string;
@@ -140,7 +142,9 @@ export function normalizeProductMasterRow(row: Record<string, unknown>): Product
   }
 
   const barcode = readFirstValue(row, HEADER_ALIASES.barcode) || productCode;
-  const supplierName = readFirstValue(row, HEADER_ALIASES.supplierName) || "납품처 미지정";
+  const supplierName = normalizeSupplierName(
+    readFirstValue(row, HEADER_ALIASES.supplierName) || "납품처 미지정",
+  );
 
   return {
     barcode,

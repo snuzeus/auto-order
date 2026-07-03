@@ -2,6 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { normalizeSupplierName } from "@/lib/domain/supplier-name";
 import { createSupplierWorkbook, type SupplierExcelRow } from "@/lib/excel/supplier-files";
 
 type BranchInfoRow = {
@@ -171,13 +172,13 @@ export async function sendSupplierOrderEmails(
 
   const emailBySupplier = new Map(
     ((suppliers ?? []) as SupplierDirectoryRow[]).map((supplier) => [
-      supplier.name.trim(),
+      normalizeSupplierName(supplier.name),
       supplier.email?.trim() ?? "",
     ]),
   );
 
   for (const [supplierName, supplierRows] of groupedRows) {
-    const email = emailBySupplier.get(supplierName) ?? "";
+    const email = emailBySupplier.get(normalizeSupplierName(supplierName)) ?? "";
 
     if (!email) {
       result.skipped.push({
