@@ -413,13 +413,18 @@ export async function POST(request: NextRequest) {
       updated_at: string;
     }> = [];
     const seenBusinessNumbers = new Set<string>();
+    let totalRows = 0;
+    let skippedRows = 0;
 
     for (let rowNumber = 2; rowNumber <= worksheet.rowCount; rowNumber += 1) {
       const row = buildRowObject(headers, worksheet.getRow(rowNumber));
 
       if (!hasAnyValue(row)) {
+        skippedRows += 1;
         continue;
       }
+
+      totalRows += 1;
 
       const businessNumber = row["사업자등록번호"]?.trim() ?? "";
       const name = row["거래처명"]?.trim() ?? "";
@@ -512,7 +517,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ importedCount: rowsToUpsert.length });
+    return NextResponse.json({
+      importedCount: rowsToUpsert.length,
+      report: {
+        sheetName: worksheet.name,
+        totalRows,
+        importedRows: rowsToUpsert.length,
+        skippedRows,
+        replacedExisting: true,
+      },
+    });
   }
 
   const rowsToUpsert: Array<{
@@ -526,13 +540,18 @@ export async function POST(request: NextRequest) {
     updated_at: string;
   }> = [];
   const seenBusinessNumbers = new Set<string>();
+  let totalRows = 0;
+  let skippedRows = 0;
 
   for (let rowNumber = 2; rowNumber <= worksheet.rowCount; rowNumber += 1) {
     const row = buildRowObject(headers, worksheet.getRow(rowNumber));
 
     if (!hasAnyValue(row)) {
+      skippedRows += 1;
       continue;
     }
+
+    totalRows += 1;
 
     const businessNumber = row["사업자등록번호"]?.trim() ?? "";
     const name = normalizeSupplierName(row["거래처명"] ?? "");
@@ -601,5 +620,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  return NextResponse.json({ importedCount: rowsToUpsert.length });
+  return NextResponse.json({
+    importedCount: rowsToUpsert.length,
+    report: {
+      sheetName: worksheet.name,
+      totalRows,
+      importedRows: rowsToUpsert.length,
+      skippedRows,
+      replacedExisting: true,
+    },
+  });
 }

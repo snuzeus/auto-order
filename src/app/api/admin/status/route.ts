@@ -29,6 +29,16 @@ type OrderRow = {
   order_items?: OrderItemRow[] | null;
 };
 
+type SupplierEmailLogRow = {
+  id: string;
+  supplier_name: string;
+  email: string | null;
+  status: "sent" | "skipped" | "failed";
+  reason: string | null;
+  provider_message_id: string | null;
+  created_at: string;
+};
+
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
 }
@@ -84,7 +94,11 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = createServiceClient();
-  const [{ data: branches, error: branchError }, { data: orders, error: orderError }] =
+  const [
+    { data: branches, error: branchError },
+    { data: orders, error: orderError },
+    { data: emailLogs, error: emailLogsError },
+  ] =
     await Promise.all([
       supabase
         .from("branches")
@@ -97,6 +111,12 @@ export async function GET(request: NextRequest) {
           "branch_id, status, order_items(product_id, barcode, product_code, product_name, spec, supplier_name, quantity, is_unregistered, memo)",
         )
         .eq("order_date", parsed.data.orderDate),
+      supabase
+        .from("supplier_email_logs")
+        .select("id, supplier_name, email, status, reason, provider_message_id, created_at")
+        .eq("order_date", parsed.data.orderDate)
+        .order("created_at", { ascending: false })
+        .limit(50),
     ]);
 
   if (branchError || orderError) {
@@ -113,5 +133,6 @@ export async function GET(request: NextRequest) {
     orderDate: parsed.data.orderDate,
     branchStatuses,
     summary,
+    emailLogs: emailLogsError ? [] : ((emailLogs ?? []) as SupplierEmailLogRow[]),
   });
 }

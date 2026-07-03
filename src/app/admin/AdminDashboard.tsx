@@ -32,6 +32,15 @@ type AdminStatus = {
     totalQuantity: number;
     supplierCount: number;
   };
+  emailLogs: Array<{
+    id: string;
+    supplier_name: string;
+    email: string | null;
+    status: "sent" | "skipped" | "failed";
+    reason: string | null;
+    provider_message_id: string | null;
+    created_at: string;
+  }>;
 };
 
 type StatusResponse = AdminStatus & {
@@ -56,6 +65,13 @@ type UploadValidationError = {
 
 type UploadResponse = {
   importedCount?: number;
+  report?: {
+    sheetName?: string;
+    totalRows?: number;
+    importedRows?: number;
+    skippedRows?: number;
+    replacedExisting?: boolean;
+  };
   error?: string;
   errors?: UploadValidationError[];
 };
@@ -215,6 +231,7 @@ export default function AdminDashboard() {
         orderDate: data.orderDate,
         branchStatuses: data.branchStatuses ?? [],
         summary: data.summary,
+        emailLogs: data.emailLogs ?? [],
       });
     } catch (loadError) {
       if (signal?.aborted) {
@@ -396,7 +413,12 @@ export default function AdminDashboard() {
         throw new Error(data.error ?? "상품 마스터 업로드에 실패했습니다.");
       }
 
-      setUploadNotice(`${data.importedCount ?? 0}건의 상품 마스터를 반영했습니다.`);
+      setUploadNotice(
+        `${data.importedCount ?? 0}건의 상품 마스터를 반영했습니다.` +
+          (data.report
+            ? ` 시트: ${data.report.sheetName ?? "-"}, 읽은 행: ${data.report.totalRows ?? 0}, 건너뜀: ${data.report.skippedRows ?? 0}.`
+            : ""),
+      );
       setUploadFile(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
@@ -728,6 +750,47 @@ export default function AdminDashboard() {
                   공급처 ZIP은 마감이 완료된 뒤에 다운로드할 수 있습니다.
                 </p>
               ) : null}
+            </div>
+
+            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="m-0 text-xl font-bold sm:text-2xl">메일 발송 이력</h2>
+                <p className="m-0 text-sm text-slate-600">최근 {status.emailLogs.length}건</p>
+              </div>
+              {status.emailLogs.length === 0 ? (
+                <p className="mt-4 text-sm text-slate-600">아직 발송 이력이 없습니다.</p>
+              ) : (
+                <div className="mt-4 overflow-hidden rounded-lg border border-slate-200">
+                  {status.emailLogs.map((log) => (
+                    <div
+                      key={log.id}
+                      className="grid gap-2 border-b border-slate-200 px-4 py-3 text-sm last:border-b-0 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1.2fr)_auto]"
+                    >
+                      <div>
+                        <p className="m-0 font-semibold">{log.supplier_name}</p>
+                        <p className="m-0 mt-1 text-slate-600">{log.email ?? "-"}</p>
+                      </div>
+                      <div>
+                        <p className="m-0 text-slate-600">
+                          {new Date(log.created_at).toLocaleString("ko-KR")}
+                        </p>
+                        {log.reason ? <p className="m-0 mt-1 text-red-700">{log.reason}</p> : null}
+                      </div>
+                      <span
+                        className={`inline-flex min-h-8 items-center justify-center rounded-full px-3 text-xs font-bold ${
+                          log.status === "sent"
+                            ? "bg-teal-100 text-teal-900"
+                            : log.status === "skipped"
+                              ? "bg-amber-100 text-amber-900"
+                              : "bg-red-100 text-red-800"
+                        }`}
+                      >
+                        {log.status === "sent" ? "발송" : log.status === "skipped" ? "제외" : "실패"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {actionMode === "close" ? (

@@ -218,14 +218,19 @@ export async function POST(request: Request) {
   const validationErrors: UploadValidationError[] = [];
   const rowsToUpsert: ProductUpsertRow[] = [];
   const seenBarcodes = new Set<string>();
+  let totalRows = 0;
+  let skippedRows = 0;
 
   for (let rowNumber = headerRowNumber + 1; rowNumber <= worksheet.rowCount; rowNumber += 1) {
     const worksheetRow = worksheet.getRow(rowNumber);
     const rowObject = buildRowObject(headers, worksheetRow);
 
     if (isEmptyProductMasterRow(rowObject)) {
+      skippedRows += 1;
       continue;
     }
+
+    totalRows += 1;
 
     try {
       const normalizedRow = normalizeProductMasterRow(rowObject);
@@ -300,5 +305,14 @@ export async function POST(request: Request) {
     });
   }
 
-  return NextResponse.json({ importedCount: rowsToUpsert.length });
+  return NextResponse.json({
+    importedCount: rowsToUpsert.length,
+    report: {
+      sheetName: worksheet.name,
+      totalRows,
+      importedRows: rowsToUpsert.length,
+      skippedRows,
+      replacedExisting: true,
+    },
+  });
 }

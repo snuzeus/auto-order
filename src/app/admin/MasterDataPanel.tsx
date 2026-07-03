@@ -7,6 +7,13 @@ const FOCUS_VISIBLE_CLASS =
 
 type SaveResponse = {
   importedCount?: number;
+  report?: {
+    sheetName?: string;
+    totalRows?: number;
+    importedRows?: number;
+    skippedRows?: number;
+    replacedExisting?: boolean;
+  };
   error?: string;
   errors?: Array<{
     rowNumber: number;
@@ -68,10 +75,13 @@ export default function MasterDataPanel() {
         throw new Error(data.error ?? "엑셀 업로드에 실패했습니다.");
       }
 
+      const reportText = data.report
+        ? ` 시트: ${data.report.sheetName ?? "-"}, 읽은 행: ${data.report.totalRows ?? 0}, 건너뜀: ${data.report.skippedRows ?? 0}.`
+        : "";
       setNotice(
         kind === "branches"
-          ? `${data.importedCount ?? 0}건의 지사 정보를 반영했습니다.`
-          : `${data.importedCount ?? 0}건의 납품처 정보를 반영했습니다.`,
+          ? `${data.importedCount ?? 0}건의 지사 정보를 반영했습니다.${reportText}`
+          : `${data.importedCount ?? 0}건의 납품처 정보를 반영했습니다.${reportText}`,
       );
 
       if (kind === "branches") {
