@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { requireAdmin } from "@/lib/auth/admin";
 import { sendSupplierOrderEmails } from "@/lib/email/supplier-order-email";
+import { cleanupOrdersBeforeYesterday } from "@/lib/orders/cleanup-old-orders";
 import { closeDateSchema } from "@/lib/schemas";
 import { createServiceClient } from "@/lib/supabase/service";
 
@@ -68,6 +69,7 @@ export async function POST(request: NextRequest) {
   }
 
   const emailResult = await sendSupplierOrderEmails(supabase, parsed.data.orderDate);
+  const cleanupResult = await cleanupOrdersBeforeYesterday(supabase);
 
-  return NextResponse.json({ closingBatchId, emailResult });
+  return NextResponse.json({ closingBatchId, emailResult, cleanupResult });
 }
