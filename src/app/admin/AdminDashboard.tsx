@@ -324,7 +324,19 @@ export default function AdminDashboard() {
 
       const emailSummary =
         endpoint === "/api/admin/close" && data.emailResult
-          ? ` 메일 발송: ${data.emailResult.sent}건, 제외: ${data.emailResult.skipped.length}건, 실패: ${data.emailResult.failed.length}건.`
+          ? [
+              ` 메일 발송: ${data.emailResult.sent}건, 제외: ${data.emailResult.skipped.length}건, 실패: ${data.emailResult.failed.length}건.`,
+              data.emailResult.skipped.length > 0
+                ? ` 제외: ${data.emailResult.skipped
+                    .map((item) => `${item.supplierName}(${item.reason})`)
+                    .join(", ")}.`
+                : "",
+              data.emailResult.failed.length > 0
+                ? ` 실패: ${data.emailResult.failed
+                    .map((item) => `${item.supplierName}(${item.reason})`)
+                    .join(", ")}.`
+                : "",
+            ].join("")
           : "";
 
       setNotice(

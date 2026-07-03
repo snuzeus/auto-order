@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const {
   requireAdminMock,
   updateMock,
+  notMock,
+  deleteMock,
   neqMock,
   upsertMock,
   fromMock,
@@ -11,6 +13,8 @@ const {
 } = vi.hoisted(() => ({
   requireAdminMock: vi.fn(),
   updateMock: vi.fn(),
+  notMock: vi.fn(),
+  deleteMock: vi.fn(),
   neqMock: vi.fn(),
   upsertMock: vi.fn(),
   fromMock: vi.fn(),
@@ -118,6 +122,8 @@ describe("POST /api/admin/products/upload", () => {
   afterEach(() => {
     requireAdminMock.mockReset();
     updateMock.mockReset();
+    notMock.mockReset();
+    deleteMock.mockReset();
     neqMock.mockReset();
     upsertMock.mockReset();
     fromMock.mockReset();
@@ -317,6 +323,9 @@ describe("POST /api/admin/products/upload", () => {
     ];
     fromMock.mockReturnValue({
       update: updateMock.mockReturnValue({
+        not: notMock.mockResolvedValue({ error: null }),
+      }),
+      delete: deleteMock.mockReturnValue({
         neq: neqMock.mockResolvedValue({ error: null }),
       }),
       upsert: upsertMock.mockResolvedValue({
@@ -333,9 +342,10 @@ describe("POST /api/admin/products/upload", () => {
     });
     expect(fromMock).toHaveBeenCalledWith("products");
     expect(updateMock).toHaveBeenCalledWith({
-      is_active: false,
-      updated_at: expect.any(String),
+      product_id: null,
     });
+    expect(notMock).toHaveBeenCalledWith("product_id", "is", null);
+    expect(deleteMock).toHaveBeenCalled();
     expect(neqMock).toHaveBeenCalledWith("id", "00000000-0000-0000-0000-000000000000");
     expect(upsertMock).toHaveBeenCalledWith(
       [
@@ -354,4 +364,5 @@ describe("POST /api/admin/products/upload", () => {
       },
     );
   });
+
 });

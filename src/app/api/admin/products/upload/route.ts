@@ -260,16 +260,21 @@ export async function POST(request: Request) {
   }
 
   const supabase = createServiceClient();
-  const now = new Date().toISOString();
-  const { error: deactivateError } = await supabase
+  const { error: clearOrderItemProductsError } = await supabase
+    .from("order_items")
+    .update({ product_id: null })
+    .not("product_id", "is", null);
+
+  if (clearOrderItemProductsError) {
+    return jsonError("상품 마스터 저장 중 기존 주문 상품 연결 정리에 실패했습니다.", 500);
+  }
+
+  const { error: deleteProductsError } = await supabase
     .from("products")
-    .update({
-      is_active: false,
-      updated_at: now,
-    })
+    .delete()
     .neq("id", "00000000-0000-0000-0000-000000000000");
 
-  if (deactivateError) {
+  if (deleteProductsError) {
     return jsonError("상품 마스터 저장 중 기존 상품 정리에 실패했습니다.", 500);
   }
 

@@ -2,6 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { normalizeSupplierName } from "@/lib/domain/supplier-name";
 import { createSupplierWorkbook, type SupplierExcelRow } from "@/lib/excel/supplier-files";
 
 type BranchInfoRow = {
@@ -169,15 +170,20 @@ export async function sendSupplierOrderEmails(
     return result;
   }
 
-  const emailBySupplier = new Map(
-    ((suppliers ?? []) as SupplierDirectoryRow[]).map((supplier) => [
-      supplier.name.trim(),
-      supplier.email?.trim() ?? "",
-    ]),
-  );
+  const emailBySupplier = new Map<string, string>();
+
+  for (const supplier of (suppliers ?? []) as SupplierDirectoryRow[]) {
+    const key = normalizeSupplierName(supplier.name);
+    const email = supplier.email?.trim() ?? "";
+    const existingEmail = emailBySupplier.get(key) ?? "";
+
+    if (email || !existingEmail) {
+      emailBySupplier.set(key, email);
+    }
+  }
 
   for (const [supplierName, supplierRows] of groupedRows) {
-    const email = emailBySupplier.get(supplierName) ?? "";
+    const email = emailBySupplier.get(normalizeSupplierName(supplierName)) ?? "";
 
     if (!email) {
       result.skipped.push({
