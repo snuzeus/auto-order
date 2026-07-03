@@ -260,6 +260,19 @@ export async function POST(request: Request) {
   }
 
   const supabase = createServiceClient();
+  const now = new Date().toISOString();
+  const { error: deactivateError } = await supabase
+    .from("products")
+    .update({
+      is_active: false,
+      updated_at: now,
+    })
+    .neq("id", "00000000-0000-0000-0000-000000000000");
+
+  if (deactivateError) {
+    return jsonError("상품 마스터 저장 중 기존 상품 정리에 실패했습니다.", 500);
+  }
+
   const { error } = await supabase.from("products").upsert(rowsToUpsert, {
     onConflict: "barcode",
   });

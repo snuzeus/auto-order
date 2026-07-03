@@ -2,12 +2,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const {
   requireAdminMock,
+  updateMock,
+  neqMock,
   upsertMock,
   fromMock,
   workbookLoadMock,
   worksheetState,
 } = vi.hoisted(() => ({
   requireAdminMock: vi.fn(),
+  updateMock: vi.fn(),
+  neqMock: vi.fn(),
   upsertMock: vi.fn(),
   fromMock: vi.fn(),
   workbookLoadMock: vi.fn(),
@@ -113,6 +117,8 @@ async function postWithFile(file?: File) {
 describe("POST /api/admin/products/upload", () => {
   afterEach(() => {
     requireAdminMock.mockReset();
+    updateMock.mockReset();
+    neqMock.mockReset();
     upsertMock.mockReset();
     fromMock.mockReset();
     workbookLoadMock.mockReset();
@@ -310,6 +316,9 @@ describe("POST /api/admin/products/upload", () => {
       ]),
     ];
     fromMock.mockReturnValue({
+      update: updateMock.mockReturnValue({
+        neq: neqMock.mockResolvedValue({ error: null }),
+      }),
       upsert: upsertMock.mockResolvedValue({
         error: null,
       }),
@@ -323,6 +332,11 @@ describe("POST /api/admin/products/upload", () => {
       importedCount: 1,
     });
     expect(fromMock).toHaveBeenCalledWith("products");
+    expect(updateMock).toHaveBeenCalledWith({
+      is_active: false,
+      updated_at: expect.any(String),
+    });
+    expect(neqMock).toHaveBeenCalledWith("id", "00000000-0000-0000-0000-000000000000");
     expect(upsertMock).toHaveBeenCalledWith(
       [
         {
