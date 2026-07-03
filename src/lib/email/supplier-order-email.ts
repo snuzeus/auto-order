@@ -91,7 +91,7 @@ async function sendResendEmail(params: {
   supplierName: string;
   orderDate: string;
   attachment: Uint8Array;
-}) {
+}): Promise<string> {
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -135,7 +135,8 @@ async function sendResendEmail(params: {
     });
 
     if (retryResponse.ok) {
-      return;
+      const retryBody = (await retryResponse.json().catch(() => null)) as { id?: string } | null;
+      return retryBody?.id ?? "";
     }
 
     const retryMessage = await retryResponse.text();
@@ -145,6 +146,27 @@ async function sendResendEmail(params: {
   if (!response.ok) {
     const message = await response.text();
     throw new Error(message || `Resend request failed with ${response.status}`);
+  }
+
+  const body = (await response.json().catch(() => null)) as { id?: string } | null;
+  return body?.id ?? "";
+}
+
+async function logSupplierEmail(
+  supabase: SupabaseClient,
+  row: {
+    order_date: string;
+    supplier_name: string;
+    email: string | null;
+    status: "sent" | "skipped" | "failed";
+    reason?: string | null;
+    provider_message_id?: string | null;
+  },
+) {
+  const { error } = await supabase.from("supplier_email_logs").insert(row);
+
+  if (error) {
+    console.error("[supplier-email-log]", error.message, row);
   }
 }
 
@@ -160,6 +182,13 @@ export async function sendSupplierOrderEmails(
   const { apiKey, from } = getEmailEnv();
 
   if (!apiKey || !from) {
+    await logSupplierEmail(supabase, {
+      order_date: orderDate,
+      supplier_name: "all",
+      email: null,
+      status: "skipped",
+      reason: "RESEND_API_KEY or ORDER_EMAIL_FROM is not set.",
+    });
     result.skipped.push({
       supplierName: "all",
       reason: "RESEND_API_KEY or ORDER_EMAIL_FROM is not set.",
@@ -176,6 +205,13 @@ export async function sendSupplierOrderEmails(
     .eq("status", "closed");
 
   if (ordersError) {
+    await logSupplierEmail(supabase, {
+      order_date: orderDate,
+      supplier_name: "all",
+      email: null,
+      status: "failed",
+      reason: ordersError.message,
+    });
     result.failed.push({
       supplierName: "all",
       email: "",
@@ -188,6 +224,13 @@ export async function sendSupplierOrderEmails(
   const groupedRows = groupRowsBySupplier(rows);
 
   if (groupedRows.size === 0) {
+    await logSupplierEmail(supabase, {
+      order_date: orderDate,
+      supplier_name: "all",
+      email: null,
+      status: "skipped",
+      reason: "No supplier order rows to email.",
+    });
     result.skipped.push({
       supplierName: "all",
       reason: "No supplier order rows to email.",
@@ -201,6 +244,13 @@ export async function sendSupplierOrderEmails(
     .eq("is_active", true);
 
   if (suppliersError) {
+    await logSupplierEmail(supabase, {
+      order_date: orderDate,
+      supplier_name: "all",
+      email: null,
+      status: "failed",
+      reason: suppliersError.message,
+    });
     result.failed.push({
       supplierName: "all",
       email: "",
@@ -227,6 +277,13 @@ export async function sendSupplierOrderEmails(
     const email = emailBySupplier.get(normalizeSupplierName(supplierName)) ?? "";
 
     if (!email) {
+      await logSupplierEmail(supabase, {
+        order_date: orderDate,
+        supplier_name: supplierName,
+        email: null,
+        status: "skipped",
+        reason: "Supplier email is not registered.",
+      });
       result.skipped.push({
         supplierName,
         reason: "Supplier email is not registered.",
@@ -240,7 +297,7 @@ export async function sendSupplierOrderEmails(
       }
 
       const workbook = await createSupplierWorkbook(supplierRows);
-      await sendResendEmail({
+      const providerMessageId = await sendResendEmail({
         apiKey,
         from,
         to: email,
@@ -248,13 +305,28 @@ export async function sendSupplierOrderEmails(
         orderDate,
         attachment: workbook,
       });
+      await logSupplierEmail(supabase, {
+        order_date: orderDate,
+        supplier_name: supplierName,
+        email,
+        status: "sent",
+        provider_message_id: providerMessageId,
+      });
       sendIndex += 1;
       result.sent += 1;
     } catch (error) {
+      const reason = error instanceof Error ? error.message : "Email delivery failed.";
+      await logSupplierEmail(supabase, {
+        order_date: orderDate,
+        supplier_name: supplierName,
+        email,
+        status: "failed",
+        reason,
+      });
       result.failed.push({
         supplierName,
         email,
-        reason: error instanceof Error ? error.message : "Email delivery failed.",
+        reason,
       });
     }
   }

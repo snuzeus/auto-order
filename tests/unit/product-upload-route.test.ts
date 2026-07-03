@@ -339,6 +339,12 @@ describe("POST /api/admin/products/upload", () => {
     expect(response.status).toBe(200);
     expect(body).toEqual({
       importedCount: 1,
+      report: {
+        importedRows: 1,
+        replacedExisting: true,
+        skippedRows: 0,
+        totalRows: 1,
+      },
     });
     expect(fromMock).toHaveBeenCalledWith("products");
     expect(updateMock).toHaveBeenCalledWith({
