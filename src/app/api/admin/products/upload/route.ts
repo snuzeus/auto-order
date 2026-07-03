@@ -136,71 +136,6 @@ function findProductMasterHeader(worksheet: ExcelJS.Worksheet): {
   };
 }
 
-function countCandidateRows(
-  worksheet: ExcelJS.Worksheet,
-  headers: string[],
-  headerRowNumber: number,
-): number {
-  let count = 0;
-
-  for (let rowNumber = headerRowNumber + 1; rowNumber <= worksheet.rowCount; rowNumber += 1) {
-    const rowObject = buildRowObject(headers, worksheet.getRow(rowNumber));
-
-    if (!isEmptyProductMasterRow(rowObject)) {
-      count += 1;
-    }
-  }
-
-  return count;
-}
-
-function findBestProductMasterWorksheet(workbook: ExcelJS.Workbook): {
-  worksheet: ExcelJS.Worksheet | undefined;
-  headers: string[];
-  headerRowNumber: number;
-  missingHeaders: string[];
-} {
-  let best:
-    | {
-        worksheet: ExcelJS.Worksheet;
-        headers: string[];
-        headerRowNumber: number;
-        missingHeaders: string[];
-        candidateRows: number;
-      }
-    | undefined;
-
-  for (const worksheet of workbook.worksheets) {
-    const headerInfo = findProductMasterHeader(worksheet);
-    const candidateRows =
-      headerInfo.missingHeaders.length === 0
-        ? countCandidateRows(worksheet, headerInfo.headers, headerInfo.headerRowNumber)
-        : 0;
-
-    if (
-      !best ||
-      headerInfo.missingHeaders.length < best.missingHeaders.length ||
-      (headerInfo.missingHeaders.length === best.missingHeaders.length &&
-        candidateRows > best.candidateRows)
-    ) {
-      best = {
-        worksheet,
-        headers: headerInfo.headers,
-        headerRowNumber: headerInfo.headerRowNumber,
-        missingHeaders: headerInfo.missingHeaders,
-        candidateRows,
-      };
-    }
-  }
-
-  return {
-    worksheet: best?.worksheet,
-    headers: best?.headers ?? [],
-    headerRowNumber: best?.headerRowNumber ?? 1,
-    missingHeaders: best?.missingHeaders ?? getMissingRequiredProductMasterHeaders([]),
-  };
-}
-
 function buildRowObject(headers: string[], row: ExcelJS.Row): Record<string, unknown> {
   return headers.reduce<Record<string, unknown>>((record, header, index) => {
     if (!header) {
@@ -268,12 +203,13 @@ export async function POST(request: Request) {
     return jsonError("엑셀 파일을 읽을 수 없습니다.", 400);
   }
 
-  const { worksheet, headers, headerRowNumber, missingHeaders } =
-    findBestProductMasterWorksheet(workbook);
+  const worksheet = workbook.worksheets[0];
 
   if (!worksheet) {
     return jsonError("엑셀 시트를 찾을 수 없습니다.", 400);
   }
+
+  const { headers, headerRowNumber, missingHeaders } = findProductMasterHeader(worksheet);
 
   if (missingHeaders.length > 0) {
     return jsonError(`필수 헤더가 없습니다: ${missingHeaders.join(", ")}`, 400);
