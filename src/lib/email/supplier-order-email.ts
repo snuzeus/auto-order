@@ -30,6 +30,9 @@ type SupplierDirectoryRow = {
   is_active: boolean;
 };
 
+const RESEND_SEND_INTERVAL_MS = 600;
+const RESEND_RATE_LIMIT_RETRY_MS = 1500;
+
 export type SupplierEmailResult = {
   sent: number;
   skipped: Array<{ supplierName: string; reason: string }>;
@@ -75,6 +78,12 @@ function getEmailEnv() {
   };
 }
 
+function sleep(milliseconds: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+}
+
 async function sendResendEmail(params: {
   apiKey: string;
   from: string;
@@ -102,6 +111,36 @@ async function sendResendEmail(params: {
       ],
     }),
   });
+
+  if (response.status === 429) {
+    await sleep(RESEND_RATE_LIMIT_RETRY_MS);
+    const retryResponse = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${params.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: params.from,
+        to: [params.to],
+        subject: `[Order] ${params.orderDate} ${params.supplierName}`,
+        text: `Please find the attached order file for ${params.orderDate}.`,
+        attachments: [
+          {
+            filename: `${params.supplierName}_${params.orderDate}.xlsx`,
+            content: Buffer.from(params.attachment).toString("base64"),
+          },
+        ],
+      }),
+    });
+
+    if (retryResponse.ok) {
+      return;
+    }
+
+    const retryMessage = await retryResponse.text();
+    throw new Error(retryMessage || `Resend request failed with ${retryResponse.status}`);
+  }
 
   if (!response.ok) {
     const message = await response.text();
@@ -182,6 +221,8 @@ export async function sendSupplierOrderEmails(
     }
   }
 
+  let sendIndex = 0;
+
   for (const [supplierName, supplierRows] of groupedRows) {
     const email = emailBySupplier.get(normalizeSupplierName(supplierName)) ?? "";
 
@@ -194,6 +235,10 @@ export async function sendSupplierOrderEmails(
     }
 
     try {
+      if (sendIndex > 0) {
+        await sleep(RESEND_SEND_INTERVAL_MS);
+      }
+
       const workbook = await createSupplierWorkbook(supplierRows);
       await sendResendEmail({
         apiKey,
@@ -203,6 +248,7 @@ export async function sendSupplierOrderEmails(
         orderDate,
         attachment: workbook,
       });
+      sendIndex += 1;
       result.sent += 1;
     } catch (error) {
       result.failed.push({
