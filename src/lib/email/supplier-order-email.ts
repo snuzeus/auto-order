@@ -170,12 +170,17 @@ export async function sendSupplierOrderEmails(
     return result;
   }
 
-  const emailBySupplier = new Map(
-    ((suppliers ?? []) as SupplierDirectoryRow[]).map((supplier) => [
-      normalizeSupplierName(supplier.name),
-      supplier.email?.trim() ?? "",
-    ]),
-  );
+  const emailBySupplier = new Map<string, string>();
+
+  for (const supplier of (suppliers ?? []) as SupplierDirectoryRow[]) {
+    const key = normalizeSupplierName(supplier.name);
+    const email = supplier.email?.trim() ?? "";
+    const existingEmail = emailBySupplier.get(key) ?? "";
+
+    if (email || !existingEmail) {
+      emailBySupplier.set(key, email);
+    }
+  }
 
   for (const [supplierName, supplierRows] of groupedRows) {
     const email = emailBySupplier.get(normalizeSupplierName(supplierName)) ?? "";
