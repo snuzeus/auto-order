@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const {
   requireAdminMock,
   updateMock,
+  notMock,
+  deleteMock,
   neqMock,
   upsertMock,
   fromMock,
@@ -11,6 +13,8 @@ const {
 } = vi.hoisted(() => ({
   requireAdminMock: vi.fn(),
   updateMock: vi.fn(),
+  notMock: vi.fn(),
+  deleteMock: vi.fn(),
   neqMock: vi.fn(),
   upsertMock: vi.fn(),
   fromMock: vi.fn(),
@@ -118,6 +122,8 @@ describe("POST /api/admin/products/upload", () => {
   afterEach(() => {
     requireAdminMock.mockReset();
     updateMock.mockReset();
+    notMock.mockReset();
+    deleteMock.mockReset();
     neqMock.mockReset();
     upsertMock.mockReset();
     fromMock.mockReset();
@@ -317,6 +323,9 @@ describe("POST /api/admin/products/upload", () => {
     ];
     fromMock.mockReturnValue({
       update: updateMock.mockReturnValue({
+        not: notMock.mockResolvedValue({ error: null }),
+      }),
+      delete: deleteMock.mockReturnValue({
         neq: neqMock.mockResolvedValue({ error: null }),
       }),
       upsert: upsertMock.mockResolvedValue({
@@ -333,9 +342,10 @@ describe("POST /api/admin/products/upload", () => {
     });
     expect(fromMock).toHaveBeenCalledWith("products");
     expect(updateMock).toHaveBeenCalledWith({
-      is_active: false,
-      updated_at: expect.any(String),
+      product_id: null,
     });
+    expect(notMock).toHaveBeenCalledWith("product_id", "is", null);
+    expect(deleteMock).toHaveBeenCalled();
     expect(neqMock).toHaveBeenCalledWith("id", "00000000-0000-0000-0000-000000000000");
     expect(upsertMock).toHaveBeenCalledWith(
       [
@@ -352,6 +362,68 @@ describe("POST /api/admin/products/upload", () => {
       {
         onConflict: "barcode",
       },
+    );
+  });
+
+  it("uses the worksheet with the most product rows", async () => {
+    requireAdminMock.mockResolvedValue({
+      ok: true,
+      userId: "user-1",
+      adminId: "admin-1",
+    });
+    workbookLoadMock.mockResolvedValue(undefined);
+    worksheetState.current = [
+      createWorksheet([
+        {
+          "바코드 번호": "88010001",
+          상품코드: "P-001",
+          상품명: "첫시트상품",
+          "납품 거래처명": "한강유통",
+          단가: "1000",
+        },
+      ], ["바코드 번호", "상품코드", "상품명", "규격", "납품 거래처명", "단가"]),
+      createWorksheet([
+        {
+          "바코드 번호": "88020001",
+          상품코드: "P-101",
+          상품명: "둘째시트상품1",
+          "납품 거래처명": "한강유통",
+          단가: "2000",
+        },
+        {
+          "바코드 번호": "88020002",
+          상품코드: "P-102",
+          상품명: "둘째시트상품2",
+          "납품 거래처명": "한강유통",
+          단가: "3000",
+        },
+      ], ["바코드 번호", "상품코드", "상품명", "규격", "납품 거래처명", "단가"]),
+    ];
+    fromMock.mockReturnValue({
+      update: updateMock.mockReturnValue({
+        not: notMock.mockResolvedValue({ error: null }),
+      }),
+      delete: deleteMock.mockReturnValue({
+        neq: neqMock.mockResolvedValue({ error: null }),
+      }),
+      upsert: upsertMock.mockResolvedValue({
+        error: null,
+      }),
+    });
+
+    const response = await postWithFile(createFile("product-master.xlsx"));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({
+      importedCount: 2,
+    });
+    expect(upsertMock).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ barcode: "88020001", name: "둘째시트상품1" }),
+        expect.objectContaining({ barcode: "88020002", name: "둘째시트상품2" }),
+      ]),
+      { onConflict: "barcode" },
     );
   });
 });
