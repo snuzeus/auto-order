@@ -1,0 +1,11 @@
+{
+  "name": "Auto Order Admin",
+  "short_name": "OrderAdmin",
+  "lang": "ko",
+  "start_url": "/admin",
+  "scope": "/admin",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#0f172a",
+  "icons": []
+}
