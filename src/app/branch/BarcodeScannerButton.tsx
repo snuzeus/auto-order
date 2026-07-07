@@ -25,6 +25,20 @@ type ExtendedMediaTrackConstraintSet = MediaTrackConstraintSet & {
   torch?: boolean;
 };
 
+type OrientationLockValue =
+  | "any"
+  | "natural"
+  | "landscape"
+  | "portrait"
+  | "portrait-primary"
+  | "portrait-secondary"
+  | "landscape-primary"
+  | "landscape-secondary";
+
+type LockableScreenOrientation = ScreenOrientation & {
+  lock?: (orientation: OrientationLockValue) => Promise<void>;
+};
+
 function normalizeBarcode(value: string) {
   return value.trim().replace(/\s/g, "");
 }
@@ -86,6 +100,11 @@ export default function BarcodeScannerButton({
     }
 
     let cancelled = false;
+    const orientation = screen.orientation as LockableScreenOrientation | undefined;
+
+    orientation?.lock?.("landscape").catch(() => {
+      // Some mobile browsers only allow orientation lock from installed PWAs.
+    });
 
     async function startScanner() {
       setStarting(true);
@@ -171,13 +190,14 @@ export default function BarcodeScannerButton({
     return () => {
       cancelled = true;
       stopScanner();
+      screen.orientation?.unlock?.();
     };
   }, [onDetected, open, stopScanner]);
 
   return (
     <>
       <button
-        className={`flex min-h-14 w-full items-center justify-center gap-2 bg-slate-900 px-5 py-4 text-lg font-semibold text-white disabled:bg-slate-300 sm:hidden ${FOCUS_VISIBLE_CLASS}`}
+        className={`hidden min-h-14 w-full items-center justify-center gap-2 bg-slate-900 px-5 py-4 text-lg font-semibold text-white disabled:bg-slate-300 [@media(pointer:coarse)]:flex ${FOCUS_VISIBLE_CLASS}`}
         disabled={disabled}
         type="button"
         onClick={() => {
@@ -192,10 +212,10 @@ export default function BarcodeScannerButton({
       {open ? (
         <div
           aria-modal="true"
-          className="fixed inset-0 z-50 flex items-stretch bg-slate-950 text-white sm:hidden"
+          className="fixed inset-0 z-50 hidden items-stretch bg-slate-950 text-white [@media(pointer:coarse)]:flex"
           role="dialog"
         >
-          <div className="flex min-h-dvh w-full flex-col">
+          <div className="flex min-h-dvh w-full flex-col landscape:flex-row">
             <div className="flex items-center justify-between border-b border-white/20 px-4 py-3">
               <h2 className="m-0 text-lg font-bold">바코드 촬영</h2>
               <button
@@ -208,7 +228,7 @@ export default function BarcodeScannerButton({
               </button>
             </div>
 
-            <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-black">
+            <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-black landscape:min-w-0">
               <video
                 ref={videoRef}
                 autoPlay
@@ -216,12 +236,12 @@ export default function BarcodeScannerButton({
                 muted
                 playsInline
               />
-              <div className="pointer-events-none absolute left-4 right-4 top-1/2 h-40 -translate-y-1/2 rounded border-2 border-emerald-400 shadow-[0_0_0_9999px_rgba(2,6,23,0.42)]">
+              <div className="pointer-events-none absolute left-4 right-4 top-1/2 h-40 -translate-y-1/2 rounded border-2 border-emerald-400 shadow-[0_0_0_9999px_rgba(2,6,23,0.42)] landscape:left-16 landscape:right-16">
                 <div className="absolute left-4 right-4 top-1/2 h-0.5 -translate-y-1/2 bg-emerald-300" />
               </div>
             </div>
 
-            <div className="space-y-3 border-t border-white/20 px-4 py-4">
+            <div className="space-y-3 border-t border-white/20 px-4 py-4 landscape:w-72 landscape:border-l landscape:border-t-0">
               {torchAvailable ? (
                 <button
                   className={`flex min-h-12 w-full items-center justify-center gap-2 rounded border border-white/30 bg-white/10 px-4 py-3 text-base font-semibold text-white ${FOCUS_VISIBLE_CLASS}`}

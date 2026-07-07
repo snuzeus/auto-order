@@ -87,7 +87,7 @@ export default function BranchOrderApp() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
   const [searchTouched, setSearchTouched] = useState(false);
-  const [productQuantities, setProductQuantities] = useState<Record<string, number>>({});
+  const [productQuantities, setProductQuantities] = useState<Record<string, string>>({});
   const [submitPending, setSubmitPending] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [submitNotice, setSubmitNotice] = useState("");
@@ -329,7 +329,7 @@ export default function BranchOrderApp() {
   }
 
   function addRegisteredProduct(product: Product) {
-    const quantity = Math.max(1, Math.floor(productQuantities[product.id] ?? 1));
+    const quantity = Math.max(1, Math.floor(Number(productQuantities[product.id] || 1)));
     const nextItem: OrderItemDraft = {
       productId: product.id,
       barcode: product.barcode,
@@ -345,6 +345,7 @@ export default function BranchOrderApp() {
     setItems((currentItems) => upsertOrderItem(currentItems, nextItem));
     setSubmitError("");
     setSubmitNotice("");
+    resetEntryFields();
   }
 
   function handleBarcodeDetected(barcode: string) {
@@ -558,11 +559,11 @@ export default function BranchOrderApp() {
                       min={1}
                       step={1}
                       type="number"
-                      value={productQuantities[product.id] ?? 1}
+                      value={productQuantities[product.id] ?? "1"}
                       onChange={(event) =>
                         setProductQuantities((current) => ({
                           ...current,
-                          [product.id]: Number(event.target.value) || 1,
+                          [product.id]: event.target.value.replace(/\D/g, ""),
                         }))
                       }
                     />
