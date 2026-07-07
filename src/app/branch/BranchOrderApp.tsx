@@ -516,7 +516,7 @@ export default function BranchOrderApp() {
               setSubmitError("");
             }}
           />
-          <div className="mt-3 sm:hidden">
+          <div className="mt-3">
             <BarcodeScannerButton
               disabled={!selectedBranchId || isClosed}
               onDetected={handleBarcodeDetected}

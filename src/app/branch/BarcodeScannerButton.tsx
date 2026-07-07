@@ -25,20 +25,6 @@ type ExtendedMediaTrackConstraintSet = MediaTrackConstraintSet & {
   torch?: boolean;
 };
 
-type OrientationLockValue =
-  | "any"
-  | "natural"
-  | "landscape"
-  | "portrait"
-  | "portrait-primary"
-  | "portrait-secondary"
-  | "landscape-primary"
-  | "landscape-secondary";
-
-type LockableScreenOrientation = ScreenOrientation & {
-  lock?: (orientation: OrientationLockValue) => Promise<void>;
-};
-
 function normalizeBarcode(value: string) {
   return value.trim().replace(/\s/g, "");
 }
@@ -100,12 +86,6 @@ export default function BarcodeScannerButton({
     }
 
     let cancelled = false;
-    const orientation = screen.orientation as LockableScreenOrientation | undefined;
-
-    orientation?.lock?.("landscape").catch(() => {
-      // Some mobile browsers only allow orientation lock from installed PWAs.
-    });
-
     async function startScanner() {
       setStarting(true);
       setError("");
@@ -190,7 +170,6 @@ export default function BarcodeScannerButton({
     return () => {
       cancelled = true;
       stopScanner();
-      screen.orientation?.unlock?.();
     };
   }, [onDetected, open, stopScanner]);
 
@@ -212,7 +191,7 @@ export default function BarcodeScannerButton({
       {open ? (
         <div
           aria-modal="true"
-          className="fixed inset-0 z-50 hidden items-stretch bg-slate-950 text-white [@media(pointer:coarse)]:flex"
+          className="fixed inset-0 z-50 flex items-stretch bg-slate-950 text-white"
           role="dialog"
         >
           <div className="flex min-h-dvh w-full flex-col landscape:flex-row">
