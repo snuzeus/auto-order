@@ -37,6 +37,7 @@ function orderItemSortKey(item: OrderItemDraft): string {
     item.spec,
     item.supplierName ?? "",
     String(item.unitPrice ?? ""),
+    String(item.minimumOrderQuantity ?? ""),
     item.memo ?? "",
     item.isUnregistered ? "1" : "0",
     String(item.quantity),
@@ -68,6 +69,7 @@ function areOrderItemsEqual(left: OrderItemDraft[], right: OrderItemDraft[]): bo
       item.spec === other.spec &&
       item.supplierName === other.supplierName &&
       item.unitPrice === other.unitPrice &&
+      item.minimumOrderQuantity === other.minimumOrderQuantity &&
       item.quantity === other.quantity &&
       item.isUnregistered === other.isUnregistered &&
       item.memo === other.memo

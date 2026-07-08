@@ -71,6 +71,22 @@ function hasActiveItems(items: OrderItemDraft[]): boolean {
   return items.some((item) => item.quantity > 0);
 }
 
+function getMinimumOrderQuantity(productOrItem: {
+  minimumOrderQuantity?: number;
+}): number {
+  const minimumOrderQuantity = productOrItem.minimumOrderQuantity;
+
+  if (!minimumOrderQuantity || !Number.isFinite(minimumOrderQuantity)) {
+    return 1;
+  }
+
+  return Math.max(1, Math.floor(minimumOrderQuantity));
+}
+
+function getOrderItemQuantityFloor(item: OrderItemDraft): number {
+  return item.minimumOrderQuantity ? getMinimumOrderQuantity(item) : 0;
+}
+
 export default function BranchOrderApp() {
   const orderDate = todayYmd();
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -329,7 +345,11 @@ export default function BranchOrderApp() {
   }
 
   function addRegisteredProduct(product: Product) {
-    const quantity = Math.max(1, Math.floor(Number(productQuantities[product.id] || 1)));
+    const minimumOrderQuantity = getMinimumOrderQuantity(product);
+    const quantity = Math.max(
+      minimumOrderQuantity,
+      Math.floor(Number(productQuantities[product.id] || minimumOrderQuantity)),
+    );
     const nextItem: OrderItemDraft = {
       productId: product.id,
       barcode: product.barcode,
@@ -338,6 +358,7 @@ export default function BranchOrderApp() {
       spec: product.spec,
       supplierName: product.supplierName,
       unitPrice: product.unitPrice,
+      minimumOrderQuantity: product.minimumOrderQuantity,
       quantity,
       isUnregistered: false,
     };
@@ -364,7 +385,7 @@ export default function BranchOrderApp() {
     setItems((currentItems) =>
       upsertOrderItem(currentItems, {
         ...item,
-        quantity: Math.max(0, Math.floor(quantity)),
+        quantity: Math.max(getOrderItemQuantityFloor(item), Math.floor(quantity)),
       }),
     );
     setSubmitError("");
@@ -548,6 +569,11 @@ export default function BranchOrderApp() {
                   <p className="mt-1 text-sm font-semibold text-slate-800">
                     상품코드 {product.productCode} · 공급가 {formatCurrency(product.unitPrice)}
                   </p>
+                  {product.minimumOrderQuantity ? (
+                    <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900">
+                      최소발주수량 {product.minimumOrderQuantity}개
+                    </p>
+                  ) : null}
                   <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
                     <label className="text-sm font-medium" htmlFor={`qty-${product.id}`}>
                       수량
@@ -556,14 +582,22 @@ export default function BranchOrderApp() {
                       id={`qty-${product.id}`}
                       className={`w-full rounded-lg border-2 border-teal-400 bg-white px-4 py-3 text-lg shadow-sm sm:w-28 ${FOCUS_VISIBLE_CLASS}`}
                       inputMode="numeric"
-                      min={1}
+                      min={getMinimumOrderQuantity(product)}
                       step={1}
                       type="number"
-                      value={productQuantities[product.id] ?? "1"}
+                      value={productQuantities[product.id] ?? String(getMinimumOrderQuantity(product))}
                       onChange={(event) =>
                         setProductQuantities((current) => ({
                           ...current,
-                          [product.id]: event.target.value.replace(/\D/g, ""),
+                          [product.id]:
+                            event.target.value === ""
+                              ? ""
+                              : String(
+                                  Math.max(
+                                    getMinimumOrderQuantity(product),
+                                    Number(event.target.value.replace(/\D/g, "")),
+                                  ),
+                                ),
                         }))
                       }
                     />
@@ -621,11 +655,16 @@ export default function BranchOrderApp() {
                         </div>
                         <div>
                           <p className="m-0 text-xs font-semibold text-slate-500">수량</p>
+                          {item.minimumOrderQuantity ? (
+                            <p className="m-0 mt-1 text-xs font-bold text-amber-700">
+                              최소 {item.minimumOrderQuantity}개
+                            </p>
+                          ) : null}
                           <div className="mt-1 flex items-center gap-2">
                             <button
                               aria-label={`${item.productName} 수량 줄이기`}
                               className={`min-h-12 min-w-12 rounded-lg border-2 border-slate-400 bg-white px-4 py-3 text-xl font-bold shadow-sm disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 ${FOCUS_VISIBLE_CLASS}`}
-                              disabled={isClosed}
+                              disabled={isClosed || item.quantity <= getOrderItemQuantityFloor(item)}
                               type="button"
                               onClick={() => updateItemQuantity(item.barcode, item.quantity - 1)}
                             >

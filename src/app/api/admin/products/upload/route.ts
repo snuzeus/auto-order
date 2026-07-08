@@ -22,7 +22,14 @@ type ProductUpsertRow = {
   spec: string;
   supplier_name: string;
   unit_price: number;
+  minimum_order_quantity: number | null;
   is_active: true;
+};
+
+type ParsedProductSheet = {
+  sheetName: string;
+  missingHeaders: string[];
+  rows: Array<{ rowNumber: number; rowObject: Record<string, unknown> }>;
 };
 
 const MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024;
@@ -85,15 +92,6 @@ function isSupportedExcelFile(file: File): boolean {
   return name.endsWith(".xlsx") || name.endsWith(".xlsm");
 }
 
-function readHeaderNames(worksheet: ExcelJS.Worksheet): string[] {
-  const headerRow = worksheet.getRow(1);
-  const columnCount = Math.max(headerRow.cellCount, headerRow.actualCellCount);
-
-  return Array.from({ length: columnCount }, (_, index) =>
-    getCellText(headerRow.getCell(index + 1).value),
-  );
-}
-
 function readHeaderNamesAtRow(worksheet: ExcelJS.Worksheet, rowNumber: number): string[] {
   const headerRow = worksheet.getRow(rowNumber);
   const columnCount = Math.max(headerRow.cellCount, headerRow.actualCellCount);
@@ -108,8 +106,9 @@ function findProductMasterHeader(worksheet: ExcelJS.Worksheet): {
   headerRowNumber: number;
   missingHeaders: string[];
 } {
-  let fallbackHeaders = readHeaderNames(worksheet);
+  let fallbackHeaders = readHeaderNamesAtRow(worksheet, 1);
   let fallbackMissingHeaders = getMissingRequiredProductMasterHeaders(fallbackHeaders);
+  let fallbackHeaderRowNumber = 1;
 
   for (let rowNumber = 1; rowNumber <= Math.min(10, worksheet.rowCount); rowNumber += 1) {
     const headers = readHeaderNamesAtRow(worksheet, rowNumber);
@@ -118,6 +117,7 @@ function findProductMasterHeader(worksheet: ExcelJS.Worksheet): {
     if (missingHeaders.length < fallbackMissingHeaders.length) {
       fallbackHeaders = headers;
       fallbackMissingHeaders = missingHeaders;
+      fallbackHeaderRowNumber = rowNumber;
     }
 
     if (missingHeaders.length === 0) {
@@ -131,7 +131,7 @@ function findProductMasterHeader(worksheet: ExcelJS.Worksheet): {
 
   return {
     headers: fallbackHeaders,
-    headerRowNumber: 1,
+    headerRowNumber: fallbackHeaderRowNumber,
     missingHeaders: fallbackMissingHeaders,
   };
 }
@@ -155,7 +155,41 @@ function mapProductRow(row: ProductMasterUploadRow): ProductUpsertRow {
     spec: row.spec,
     supplier_name: row.supplierName,
     unit_price: row.unitPrice,
+    minimum_order_quantity: row.minimumOrderQuantity,
     is_active: true,
+  };
+}
+
+async function parseOpenXmlProductSheet(buffer: Buffer): Promise<ParsedProductSheet> {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(
+    buffer as unknown as Parameters<ExcelJS.Workbook["xlsx"]["load"]>[0],
+  );
+
+  const worksheet = workbook.worksheets[0];
+
+  if (!worksheet) {
+    return {
+      sheetName: "",
+      missingHeaders: getMissingRequiredProductMasterHeaders([]),
+      rows: [],
+    };
+  }
+
+  const { headers, headerRowNumber, missingHeaders } = findProductMasterHeader(worksheet);
+  const rows = Array.from({ length: worksheet.rowCount - headerRowNumber }, (_, index) => {
+    const rowNumber = headerRowNumber + index + 1;
+
+    return {
+      rowNumber,
+      rowObject: buildRowObject(headers, worksheet.getRow(rowNumber)),
+    };
+  });
+
+  return {
+    sheetName: worksheet.name || "Sheet1",
+    missingHeaders,
+    rows,
   };
 }
 
@@ -192,27 +226,21 @@ export async function POST(request: Request) {
     return jsonError("엑셀 파일은 5MB 이하만 업로드할 수 있습니다.", 400);
   }
 
-  const workbook = new ExcelJS.Workbook();
+  let parsedSheet: ParsedProductSheet;
 
   try {
-    const buffer = (await file.arrayBuffer()) as unknown as Parameters<
-      ExcelJS.Workbook["xlsx"]["load"]
-    >[0];
-    await workbook.xlsx.load(buffer);
+    const buffer = Buffer.from(await file.arrayBuffer());
+    parsedSheet = await parseOpenXmlProductSheet(buffer);
   } catch {
     return jsonError("엑셀 파일을 읽을 수 없습니다.", 400);
   }
 
-  const worksheet = workbook.worksheets[0];
-
-  if (!worksheet) {
+  if (!parsedSheet.sheetName) {
     return jsonError("엑셀 시트를 찾을 수 없습니다.", 400);
   }
 
-  const { headers, headerRowNumber, missingHeaders } = findProductMasterHeader(worksheet);
-
-  if (missingHeaders.length > 0) {
-    return jsonError(`필수 헤더가 없습니다: ${missingHeaders.join(", ")}`, 400);
+  if (parsedSheet.missingHeaders.length > 0) {
+    return jsonError(`필수 헤더가 없습니다: ${parsedSheet.missingHeaders.join(", ")}`, 400);
   }
 
   const validationErrors: UploadValidationError[] = [];
@@ -221,10 +249,7 @@ export async function POST(request: Request) {
   let totalRows = 0;
   let skippedRows = 0;
 
-  for (let rowNumber = headerRowNumber + 1; rowNumber <= worksheet.rowCount; rowNumber += 1) {
-    const worksheetRow = worksheet.getRow(rowNumber);
-    const rowObject = buildRowObject(headers, worksheetRow);
-
+  for (const { rowNumber, rowObject } of parsedSheet.rows) {
     if (isEmptyProductMasterRow(rowObject)) {
       skippedRows += 1;
       continue;
@@ -308,7 +333,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     importedCount: rowsToUpsert.length,
     report: {
-      sheetName: worksheet.name,
+      sheetName: parsedSheet.sheetName,
       totalRows,
       importedRows: rowsToUpsert.length,
       skippedRows,

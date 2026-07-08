@@ -7,6 +7,7 @@ export type ProductMasterUploadRow = {
   spec: string;
   supplierName: string;
   unitPrice: number;
+  minimumOrderQuantity: number | null;
 };
 
 export const PRODUCT_MASTER_HEADERS = [
@@ -18,7 +19,9 @@ export const PRODUCT_MASTER_HEADERS = [
   "입수량",
   "공급가",
   "납품처",
+  "거래처",
   "계약단가",
+  "최소발주수량",
 ] as const;
 
 export const REQUIRED_PRODUCT_MASTER_FIELDS = ["상품코드", "상품명"] as const;
@@ -28,8 +31,9 @@ const HEADER_ALIASES = {
   productCode: ["상품코드", "바코드 번호", "바코드"],
   name: ["상품명"],
   spec: ["규격", "입수량"],
-  supplierName: ["납품 거래처명", "납품처", "거래처명", "공급처"],
+  supplierName: ["납품 거래처명", "납품처", "거래처명", "공급처", "거래처"],
   unitPrice: ["공급가", "계약단가", "단가"],
+  minimumOrderQuantity: ["최소발주수량", "최소 발주 수량", "최소주문수량", "최소 주문 수량"],
 } as const;
 
 type RichTextValue = {
@@ -99,6 +103,29 @@ function parseUnitPrice(value: unknown): number {
   return unitPrice;
 }
 
+function parseMinimumOrderQuantity(value: unknown): number | null {
+  const text = cellValueToText(value);
+
+  if (!text) {
+    return null;
+  }
+
+  const normalized = text.replaceAll(",", "");
+  const minimumOrderQuantity = Number(normalized);
+
+  if (!Number.isFinite(minimumOrderQuantity)) {
+    throw new Error("최소발주수량을 숫자로 입력해 주세요.");
+  }
+
+  const flooredQuantity = Math.floor(minimumOrderQuantity);
+
+  if (flooredQuantity <= 0) {
+    return null;
+  }
+
+  return flooredQuantity;
+}
+
 function readFirstValue(row: Record<string, unknown>, aliases: readonly string[]): string {
   for (const alias of aliases) {
     const value = cellValueToText(row[alias]);
@@ -153,9 +180,12 @@ export function normalizeProductMasterRow(row: Record<string, unknown>): Product
     spec: "",
     supplierName,
     unitPrice: parseUnitPrice(readFirstValue(row, HEADER_ALIASES.unitPrice)),
+    minimumOrderQuantity: parseMinimumOrderQuantity(
+      readFirstValue(row, HEADER_ALIASES.minimumOrderQuantity),
+    ),
   };
 }
 
 export function normalizeProductMasterHeader(header: string): string {
-  return header;
+  return header.trim();
 }

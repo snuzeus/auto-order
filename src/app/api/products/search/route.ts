@@ -11,6 +11,7 @@ type ProductRow = {
   spec: string;
   supplier_name: string;
   unit_price: number | string;
+  minimum_order_quantity: number | string | null;
   is_active: boolean;
 };
 
@@ -54,6 +55,10 @@ function mapProduct(row: ProductRow): Product {
     spec: row.spec,
     supplierName: row.supplier_name,
     unitPrice: Number(row.unit_price),
+    minimumOrderQuantity:
+      row.minimum_order_quantity === null || row.minimum_order_quantity === undefined
+        ? undefined
+        : Number(row.minimum_order_quantity),
     isActive: row.is_active,
   };
 }
@@ -70,7 +75,7 @@ export async function GET(request: NextRequest) {
 
   const { data: exactMatches, error: barcodeError } = await supabase
     .from("products")
-    .select("id, barcode, product_code, name, spec, supplier_name, unit_price, is_active")
+    .select("id, barcode, product_code, name, spec, supplier_name, unit_price, minimum_order_quantity, is_active")
     .eq("is_active", true)
     .eq("barcode", query)
     .order("name", { ascending: true })
@@ -92,7 +97,7 @@ export async function GET(request: NextRequest) {
 
   const { data: codeMatches, error: codeError } = await supabase
     .from("products")
-    .select("id, barcode, product_code, name, spec, supplier_name, unit_price, is_active")
+    .select("id, barcode, product_code, name, spec, supplier_name, unit_price, minimum_order_quantity, is_active")
     .eq("is_active", true)
     .or(buildCodeSearchFilter(query))
     .order("name", { ascending: true })
@@ -112,7 +117,7 @@ export async function GET(request: NextRequest) {
 
   const { data: nameMatches, error: nameError } = await supabase
     .from("products")
-    .select("id, barcode, product_code, name, spec, supplier_name, unit_price, is_active")
+    .select("id, barcode, product_code, name, spec, supplier_name, unit_price, minimum_order_quantity, is_active")
     .eq("is_active", true)
     .ilike("name", `%${escapedQuery}%`)
     .order("name", { ascending: true })
