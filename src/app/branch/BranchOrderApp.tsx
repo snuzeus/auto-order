@@ -87,6 +87,18 @@ function getOrderItemQuantityFloor(item: OrderItemDraft): number {
   return item.minimumOrderQuantity ? getMinimumOrderQuantity(item) : 0;
 }
 
+function formatOrderStatus(status: "not_submitted" | OrderStatus): string {
+  if (status === "closed") {
+    return "마감됨";
+  }
+
+  if (status === "submitted") {
+    return "제출됨";
+  }
+
+  return "미제출";
+}
+
 export default function BranchOrderApp() {
   const orderDate = todayYmd();
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -310,6 +322,7 @@ export default function BranchOrderApp() {
     !submitPending &&
     !isClosed &&
     !orderLoading;
+
   function resetEntryFields() {
     setQuery("");
     setSearchResults([]);
@@ -440,7 +453,7 @@ export default function BranchOrderApp() {
       setSyncedItems(submittedItems);
       setOrderStatus(data.order?.status ?? "submitted");
       setConfirmingSubmit(false);
-      setSubmitNotice("주문이 제출되었습니다.");
+      setSubmitNotice("주문을 제출했습니다.");
       window.localStorage.removeItem(draftStorageKey(submitBranchId, submitOrderDate));
     } catch (error) {
       const isLatestRequest = submitRequestIdRef.current === requestId;
@@ -470,12 +483,7 @@ export default function BranchOrderApp() {
             {selectedBranch ? selectedBranch.name : "지사를 선택해 주세요"}
           </p>
           <p className="mt-2 text-sm text-teal-50">
-            상태:{" "}
-            {orderStatus === "closed"
-              ? "마감됨"
-              : orderStatus === "submitted"
-                ? "제출됨"
-                : "미제출"}
+            상태: {formatOrderStatus(orderStatus)}
           </p>
         </header>
 
@@ -637,60 +645,60 @@ export default function BranchOrderApp() {
                 .map((item) => (
                   <div key={item.barcode} className="rounded-lg border border-slate-200 bg-slate-50/80 p-4">
                     <div className="grid gap-3 sm:grid-cols-[1fr_2fr_1fr_auto_1fr] sm:items-center">
-                        <div>
-                          <p className="m-0 text-xs font-semibold text-slate-500">상품코드</p>
-                          <p className="m-0 mt-1 break-words text-base font-semibold">
-                            {item.productCode || item.barcode}
+                      <div>
+                        <p className="m-0 text-xs font-semibold text-slate-500">상품코드</p>
+                        <p className="m-0 mt-1 break-words text-base font-semibold">
+                          {item.productCode || item.barcode}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="m-0 text-xs font-semibold text-slate-500">상품명</p>
+                        <p className="m-0 mt-1 text-base font-semibold">{item.productName}</p>
+                      </div>
+                      <div>
+                        <p className="m-0 text-xs font-semibold text-slate-500">공급가</p>
+                        <p className="m-0 mt-1 text-base font-semibold">
+                          {formatCurrency(item.unitPrice)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="m-0 text-xs font-semibold text-slate-500">수량</p>
+                        {item.minimumOrderQuantity ? (
+                          <p className="m-0 mt-1 text-xs font-bold text-amber-700">
+                            최소 {item.minimumOrderQuantity}개
                           </p>
-                        </div>
-                        <div>
-                          <p className="m-0 text-xs font-semibold text-slate-500">상품명</p>
-                          <p className="m-0 mt-1 text-base font-semibold">{item.productName}</p>
-                        </div>
-                        <div>
-                          <p className="m-0 text-xs font-semibold text-slate-500">공급가</p>
-                          <p className="m-0 mt-1 text-base font-semibold">
-                            {formatCurrency(item.unitPrice)}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="m-0 text-xs font-semibold text-slate-500">수량</p>
-                          {item.minimumOrderQuantity ? (
-                            <p className="m-0 mt-1 text-xs font-bold text-amber-700">
-                              최소 {item.minimumOrderQuantity}개
-                            </p>
-                          ) : null}
-                          <div className="mt-1 flex items-center gap-2">
-                            <button
-                              aria-label={`${item.productName} 수량 줄이기`}
-                              className={`min-h-12 min-w-12 rounded-lg border-2 border-slate-400 bg-white px-4 py-3 text-xl font-bold shadow-sm disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 ${FOCUS_VISIBLE_CLASS}`}
-                              disabled={isClosed || item.quantity <= getOrderItemQuantityFloor(item)}
-                              type="button"
-                              onClick={() => updateItemQuantity(item.barcode, item.quantity - 1)}
-                            >
-                              -
-                            </button>
-                            <span className="min-w-10 text-center text-2xl font-bold">
-                              {item.quantity}
-                            </span>
-                            <button
-                              aria-label={`${item.productName} 수량 늘리기`}
-                              className={`min-h-12 min-w-12 rounded-lg border-2 border-slate-900 bg-slate-900 px-4 py-3 text-xl font-bold text-white shadow-sm disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 ${FOCUS_VISIBLE_CLASS}`}
-                              disabled={isClosed}
-                              type="button"
-                              onClick={() => updateItemQuantity(item.barcode, item.quantity + 1)}
-                            >
-                              +
-                            </button>
-                          </div>
-                        </div>
-                        <div>
-                          <p className="m-0 text-xs font-semibold text-slate-500">금액</p>
-                          <p className="m-0 mt-1 text-base font-bold">
-                            {formatCurrency(calculateLineAmount(item))}
-                          </p>
+                        ) : null}
+                        <div className="mt-1 flex items-center gap-2">
+                          <button
+                            aria-label={`${item.productName} 수량 줄이기`}
+                            className={`min-h-12 min-w-12 rounded-lg border-2 border-slate-400 bg-white px-4 py-3 text-xl font-bold shadow-sm disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 ${FOCUS_VISIBLE_CLASS}`}
+                            disabled={isClosed || item.quantity <= getOrderItemQuantityFloor(item)}
+                            type="button"
+                            onClick={() => updateItemQuantity(item.barcode, item.quantity - 1)}
+                          >
+                            -
+                          </button>
+                          <span className="min-w-10 text-center text-2xl font-bold">
+                            {item.quantity}
+                          </span>
+                          <button
+                            aria-label={`${item.productName} 수량 늘리기`}
+                            className={`min-h-12 min-w-12 rounded-lg border-2 border-slate-900 bg-slate-900 px-4 py-3 text-xl font-bold text-white shadow-sm disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 ${FOCUS_VISIBLE_CLASS}`}
+                            disabled={isClosed}
+                            type="button"
+                            onClick={() => updateItemQuantity(item.barcode, item.quantity + 1)}
+                          >
+                            +
+                          </button>
                         </div>
                       </div>
+                      <div>
+                        <p className="m-0 text-xs font-semibold text-slate-500">금액</p>
+                        <p className="m-0 mt-1 text-base font-bold">
+                          {formatCurrency(calculateLineAmount(item))}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 ))}
               <div className="rounded-lg border border-teal-200 bg-teal-50 px-4 py-4 text-right">

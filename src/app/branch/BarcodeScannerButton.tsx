@@ -86,6 +86,7 @@ export default function BarcodeScannerButton({
     }
 
     let cancelled = false;
+
     async function startScanner() {
       setStarting(true);
       setError("");

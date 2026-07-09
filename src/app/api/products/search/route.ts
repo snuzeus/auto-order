@@ -63,6 +63,13 @@ function mapProduct(row: ProductRow): Product {
   };
 }
 
+function searchError() {
+  return NextResponse.json(
+    { error: "상품 검색 중 오류가 발생했습니다." },
+    { status: 500 },
+  );
+}
+
 export async function GET(request: NextRequest) {
   const query = request.nextUrl.searchParams.get("q")?.trim() ?? "";
 
@@ -72,20 +79,19 @@ export async function GET(request: NextRequest) {
 
   const supabase = createServiceClient();
   const results = new Map<string, Product>();
+  const selectColumns =
+    "id, barcode, product_code, name, spec, supplier_name, unit_price, minimum_order_quantity, is_active";
 
   const { data: exactMatches, error: barcodeError } = await supabase
     .from("products")
-    .select("id, barcode, product_code, name, spec, supplier_name, unit_price, minimum_order_quantity, is_active")
+    .select(selectColumns)
     .eq("is_active", true)
     .eq("barcode", query)
     .order("name", { ascending: true })
     .limit(10);
 
   if (barcodeError) {
-    return NextResponse.json(
-      { error: "상품 검색 중 오류가 발생했습니다." },
-      { status: 500 },
-    );
+    return searchError();
   }
 
   for (const row of exactMatches ?? []) {
@@ -97,17 +103,14 @@ export async function GET(request: NextRequest) {
 
   const { data: codeMatches, error: codeError } = await supabase
     .from("products")
-    .select("id, barcode, product_code, name, spec, supplier_name, unit_price, minimum_order_quantity, is_active")
+    .select(selectColumns)
     .eq("is_active", true)
     .or(buildCodeSearchFilter(query))
     .order("name", { ascending: true })
     .limit(20);
 
   if (codeError) {
-    return NextResponse.json(
-      { error: "?곹뭹 寃??以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎." },
-      { status: 500 },
-    );
+    return searchError();
   }
 
   for (const row of codeMatches ?? []) {
@@ -117,17 +120,14 @@ export async function GET(request: NextRequest) {
 
   const { data: nameMatches, error: nameError } = await supabase
     .from("products")
-    .select("id, barcode, product_code, name, spec, supplier_name, unit_price, minimum_order_quantity, is_active")
+    .select(selectColumns)
     .eq("is_active", true)
     .ilike("name", `%${escapedQuery}%`)
     .order("name", { ascending: true })
     .limit(20);
 
   if (nameError) {
-    return NextResponse.json(
-      { error: "상품 검색 중 오류가 발생했습니다." },
-      { status: 500 },
-    );
+    return searchError();
   }
 
   for (const row of nameMatches ?? []) {
