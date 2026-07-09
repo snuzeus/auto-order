@@ -87,6 +87,10 @@ function getOrderItemQuantityFloor(item: OrderItemDraft): number {
   return item.minimumOrderQuantity ? getMinimumOrderQuantity(item) : 0;
 }
 
+function normalizeQuantityInput(value: string): string {
+  return value.replace(/\D/g, "");
+}
+
 function formatOrderStatus(status: "not_submitted" | OrderStatus): string {
   if (status === "closed") {
     return "마감됨";
@@ -359,9 +363,11 @@ export default function BranchOrderApp() {
 
   function addRegisteredProduct(product: Product) {
     const minimumOrderQuantity = getMinimumOrderQuantity(product);
+    const quantityInput = normalizeQuantityInput(productQuantities[product.id] ?? "");
+    const parsedQuantity = quantityInput ? Math.floor(Number(quantityInput)) : minimumOrderQuantity;
     const quantity = Math.max(
       minimumOrderQuantity,
-      Math.floor(Number(productQuantities[product.id] || minimumOrderQuantity)),
+      parsedQuantity,
     );
     const nextItem: OrderItemDraft = {
       productId: product.id,
@@ -597,15 +603,7 @@ export default function BranchOrderApp() {
                       onChange={(event) =>
                         setProductQuantities((current) => ({
                           ...current,
-                          [product.id]:
-                            event.target.value === ""
-                              ? ""
-                              : String(
-                                  Math.max(
-                                    getMinimumOrderQuantity(product),
-                                    Number(event.target.value.replace(/\D/g, "")),
-                                  ),
-                                ),
+                          [product.id]: normalizeQuantityInput(event.target.value),
                         }))
                       }
                     />
