@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import * as XLSX from "xlsx";
 
 const {
   requireAdminMock,
@@ -20,7 +21,11 @@ const {
   fromMock: vi.fn(),
   workbookLoadMock: vi.fn(),
   worksheetState: {
-    current: [] as Array<{ rowCount: number; getRow: (rowNumber: number) => unknown }>,
+    current: [] as Array<{
+      name?: string;
+      rowCount: number;
+      getRow: (rowNumber: number) => unknown;
+    }>,
   },
 }));
 
@@ -54,12 +59,13 @@ type ProductMasterFixtureRow = {
   상품명?: string;
   규격?: string;
   "납품 거래처명"?: string;
-  단가?: string;
+  공급가: string;
+  최소발주수량?: string;
 };
 
 function createWorksheet(
   rows: ProductMasterFixtureRow[],
-  headers = ["바코드 번호", "상품코드", "상품명", "규격", "납품 거래처명", "단가"],
+  headers = ["바코드 번호", "상품코드", "상품명", "규격", "납품 거래처명", "공급가", "최소발주수량"],
 ) {
   const allRows = [
     headers,
@@ -69,11 +75,13 @@ function createWorksheet(
       row.상품명 ?? "",
       row.규격 ?? "",
       row["납품 거래처명"] ?? "",
-      row.단가 ?? "",
+      row.공급가 ?? "",
+      row.최소발주수량 ?? "",
     ]),
   ];
 
   return {
+    name: "Sheet1",
     rowCount: allRows.length,
     getRow(rowNumber: number) {
       const rowValues = allRows[rowNumber - 1] ?? [];
@@ -101,6 +109,25 @@ function createFile(name: string, size = 8): File {
   });
   Object.defineProperty(file, "arrayBuffer", {
     value: vi.fn().mockResolvedValue(new ArrayBuffer(Math.max(size, 1))),
+  });
+
+  return file;
+}
+
+function createLegacyXlsFile(rows: unknown[][]): File {
+  const worksheet = XLSX.utils.aoa_to_sheet(rows);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1");
+  const buffer = XLSX.write(workbook, {
+    bookType: "biff8",
+    type: "array",
+  }) as ArrayBuffer;
+  const file = new File([buffer], "product-master.xls", {
+    type: "application/vnd.ms-excel",
+  });
+
+  Object.defineProperty(file, "arrayBuffer", {
+    value: vi.fn().mockResolvedValue(buffer),
   });
 
   return file;
@@ -147,20 +174,20 @@ describe("POST /api/admin/products/upload", () => {
     });
   });
 
-  it("rejects unsupported .xls files before reading them", async () => {
+  it("rejects unsupported non-excel files before reading them", async () => {
     requireAdminMock.mockResolvedValue({
       ok: true,
       userId: "user-1",
       adminId: "admin-1",
     });
-    const file = createFile("product-master.xls");
+    const file = createFile("product-master.csv");
 
     const response = await postWithFile(file);
     const body = await response.json();
 
     expect(response.status).toBe(400);
     expect(body).toEqual({
-      error: "엑셀 파일(.xlsx, .xlsm)만 업로드할 수 있습니다.",
+      error: "엑셀 파일(.xlsx, .xlsm, .xls)만 업로드할 수 있습니다.",
     });
     expect(workbookLoadMock).not.toHaveBeenCalled();
   });
@@ -209,7 +236,7 @@ describe("POST /api/admin/products/upload", () => {
     });
     workbookLoadMock.mockResolvedValue(undefined);
     worksheetState.current = [
-      createWorksheet([], ["바코드 번호", "상품코드", "규격", "단가"]),
+      createWorksheet([], ["바코드 번호", "상품코드", "규격", "공급가"]),
     ];
 
     const response = await postWithFile(createFile("product-master.xlsx"));
@@ -237,7 +264,7 @@ describe("POST /api/admin/products/upload", () => {
           상품명: "생수",
           규격: "500ml",
           "납품 거래처명": "샘물유통",
-          단가: "1000",
+          공급가: "1000",
         },
         {
           "바코드 번호": " 88010001 ",
@@ -245,7 +272,7 @@ describe("POST /api/admin/products/upload", () => {
           상품명: "탄산수",
           규격: "500ml",
           "납품 거래처명": "샘물유통",
-          단가: "1200",
+          공급가: "1200",
         },
       ]),
     ];
@@ -281,7 +308,7 @@ describe("POST /api/admin/products/upload", () => {
           상품명: "생수",
           규격: "500ml",
           "납품 거래처명": "샘물유통",
-          단가: "천원",
+          공급가: "천원",
         },
       ]),
     ];
@@ -317,7 +344,8 @@ describe("POST /api/admin/products/upload", () => {
           상품명: " 생수 ",
           규격: " 500ml ",
           "납품 거래처명": " 샘물유통 ",
-          단가: " 1,250 ",
+          공급가: " 1,250 ",
+          최소발주수량: "12",
         },
       ]),
     ];
@@ -344,6 +372,7 @@ describe("POST /api/admin/products/upload", () => {
         replacedExisting: true,
         skippedRows: 0,
         totalRows: 1,
+        sheetName: "Sheet1",
       },
     });
     expect(fromMock).toHaveBeenCalledWith("products");
@@ -362,6 +391,7 @@ describe("POST /api/admin/products/upload", () => {
           spec: "",
           supplier_name: "샘물유통",
           unit_price: 1250,
+          minimum_order_quantity: 12,
           is_active: true,
         },
       ],
@@ -371,4 +401,51 @@ describe("POST /api/admin/products/upload", () => {
     );
   });
 
+  it("upserts validated rows from legacy xls files", async () => {
+    requireAdminMock.mockResolvedValue({
+      ok: true,
+      userId: "user-1",
+      adminId: "admin-1",
+    });
+    fromMock.mockReturnValue({
+      update: updateMock.mockReturnValue({
+        not: notMock.mockResolvedValue({ error: null }),
+      }),
+      delete: deleteMock.mockReturnValue({
+        neq: neqMock.mockResolvedValue({ error: null }),
+      }),
+      upsert: upsertMock.mockResolvedValue({
+        error: null,
+      }),
+    });
+
+    const response = await postWithFile(
+      createLegacyXlsFile([
+        ["바코드 번호", "상품코드", "상품명", "규격", "납품 거래처명", "공급가", "최소발주수량"],
+        ["88010002", "P-002", "샴푸", "", "다원(프로랑스)", "2,500", "6"],
+      ]),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.importedCount).toBe(1);
+    expect(workbookLoadMock).not.toHaveBeenCalled();
+    expect(upsertMock).toHaveBeenCalledWith(
+      [
+        {
+          barcode: "88010002",
+          product_code: "P-002",
+          name: "샴푸",
+          spec: "",
+          supplier_name: "다원(프로랑스)",
+          unit_price: 2500,
+          minimum_order_quantity: 6,
+          is_active: true,
+        },
+      ],
+      {
+        onConflict: "barcode",
+      },
+    );
+  });
 });

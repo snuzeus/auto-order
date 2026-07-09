@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import { NextResponse } from "next/server";
+import * as XLSX from "xlsx";
 
 import { requireAdmin } from "@/lib/auth/admin";
 import {
@@ -22,8 +23,17 @@ type ProductUpsertRow = {
   spec: string;
   supplier_name: string;
   unit_price: number;
+  minimum_order_quantity: number | null;
   is_active: true;
 };
+
+type ParsedProductSheet = {
+  sheetName: string;
+  missingHeaders: string[];
+  rows: Array<{ rowNumber: number; rowObject: Record<string, unknown> }>;
+};
+
+type SheetRow = unknown[];
 
 const MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024;
 
@@ -82,16 +92,11 @@ function getCellText(value: unknown): string {
 function isSupportedExcelFile(file: File): boolean {
   const name = file.name.toLowerCase();
 
-  return name.endsWith(".xlsx") || name.endsWith(".xlsm");
+  return name.endsWith(".xlsx") || name.endsWith(".xlsm") || name.endsWith(".xls");
 }
 
-function readHeaderNames(worksheet: ExcelJS.Worksheet): string[] {
-  const headerRow = worksheet.getRow(1);
-  const columnCount = Math.max(headerRow.cellCount, headerRow.actualCellCount);
-
-  return Array.from({ length: columnCount }, (_, index) =>
-    getCellText(headerRow.getCell(index + 1).value),
-  );
+function isLegacyExcelFile(file: File): boolean {
+  return file.name.toLowerCase().endsWith(".xls");
 }
 
 function readHeaderNamesAtRow(worksheet: ExcelJS.Worksheet, rowNumber: number): string[] {
@@ -108,8 +113,9 @@ function findProductMasterHeader(worksheet: ExcelJS.Worksheet): {
   headerRowNumber: number;
   missingHeaders: string[];
 } {
-  let fallbackHeaders = readHeaderNames(worksheet);
+  let fallbackHeaders = readHeaderNamesAtRow(worksheet, 1);
   let fallbackMissingHeaders = getMissingRequiredProductMasterHeaders(fallbackHeaders);
+  let fallbackHeaderRowNumber = 1;
 
   for (let rowNumber = 1; rowNumber <= Math.min(10, worksheet.rowCount); rowNumber += 1) {
     const headers = readHeaderNamesAtRow(worksheet, rowNumber);
@@ -118,6 +124,7 @@ function findProductMasterHeader(worksheet: ExcelJS.Worksheet): {
     if (missingHeaders.length < fallbackMissingHeaders.length) {
       fallbackHeaders = headers;
       fallbackMissingHeaders = missingHeaders;
+      fallbackHeaderRowNumber = rowNumber;
     }
 
     if (missingHeaders.length === 0) {
@@ -131,7 +138,7 @@ function findProductMasterHeader(worksheet: ExcelJS.Worksheet): {
 
   return {
     headers: fallbackHeaders,
-    headerRowNumber: 1,
+    headerRowNumber: fallbackHeaderRowNumber,
     missingHeaders: fallbackMissingHeaders,
   };
 }
@@ -147,6 +154,55 @@ function buildRowObject(headers: string[], row: ExcelJS.Row): Record<string, unk
   }, {});
 }
 
+function findProductMasterHeaderInRows(rows: SheetRow[]): {
+  headers: string[];
+  headerRowNumber: number;
+  missingHeaders: string[];
+} {
+  let fallbackHeaders = rows[0]?.map((value) => getCellText(value)) ?? [];
+  let fallbackMissingHeaders = getMissingRequiredProductMasterHeaders(fallbackHeaders);
+  let fallbackHeaderRowNumber = 1;
+
+  for (let rowIndex = 0; rowIndex < Math.min(10, rows.length); rowIndex += 1) {
+    const headers = rows[rowIndex]?.map((value) => getCellText(value)) ?? [];
+    const missingHeaders = getMissingRequiredProductMasterHeaders(headers);
+
+    if (missingHeaders.length < fallbackMissingHeaders.length) {
+      fallbackHeaders = headers;
+      fallbackMissingHeaders = missingHeaders;
+      fallbackHeaderRowNumber = rowIndex + 1;
+    }
+
+    if (missingHeaders.length === 0) {
+      return {
+        headers,
+        headerRowNumber: rowIndex + 1,
+        missingHeaders,
+      };
+    }
+  }
+
+  return {
+    headers: fallbackHeaders,
+    headerRowNumber: fallbackHeaderRowNumber,
+    missingHeaders: fallbackMissingHeaders,
+  };
+}
+
+function buildRowObjectFromSheetRow(
+  headers: string[],
+  row: SheetRow | undefined,
+): Record<string, unknown> {
+  return headers.reduce<Record<string, unknown>>((record, header, index) => {
+    if (!header) {
+      return record;
+    }
+
+    record[header] = getCellText(row?.[index]);
+    return record;
+  }, {});
+}
+
 function mapProductRow(row: ProductMasterUploadRow): ProductUpsertRow {
   return {
     barcode: row.barcode,
@@ -155,7 +211,76 @@ function mapProductRow(row: ProductMasterUploadRow): ProductUpsertRow {
     spec: row.spec,
     supplier_name: row.supplierName,
     unit_price: row.unitPrice,
+    minimum_order_quantity: row.minimumOrderQuantity,
     is_active: true,
+  };
+}
+
+async function parseOpenXmlProductSheet(buffer: Buffer): Promise<ParsedProductSheet> {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(
+    buffer as unknown as Parameters<ExcelJS.Workbook["xlsx"]["load"]>[0],
+  );
+
+  const worksheet = workbook.worksheets[0];
+
+  if (!worksheet) {
+    return {
+      sheetName: "",
+      missingHeaders: getMissingRequiredProductMasterHeaders([]),
+      rows: [],
+    };
+  }
+
+  const { headers, headerRowNumber, missingHeaders } = findProductMasterHeader(worksheet);
+  const rows = Array.from({ length: worksheet.rowCount - headerRowNumber }, (_, index) => {
+    const rowNumber = headerRowNumber + index + 1;
+
+    return {
+      rowNumber,
+      rowObject: buildRowObject(headers, worksheet.getRow(rowNumber)),
+    };
+  });
+
+  return {
+    sheetName: worksheet.name || "Sheet1",
+    missingHeaders,
+    rows,
+  };
+}
+
+function parseLegacyProductSheet(buffer: Buffer): ParsedProductSheet {
+  const workbook = XLSX.read(buffer, {
+    type: "buffer",
+    cellDates: true,
+  });
+  const sheetName = workbook.SheetNames[0] ?? "";
+  const worksheet = sheetName ? workbook.Sheets[sheetName] : undefined;
+
+  if (!worksheet) {
+    return {
+      sheetName: "",
+      missingHeaders: getMissingRequiredProductMasterHeaders([]),
+      rows: [],
+    };
+  }
+
+  const sheetRows = XLSX.utils.sheet_to_json<SheetRow>(worksheet, {
+    header: 1,
+    raw: false,
+    defval: "",
+    blankrows: false,
+  });
+  const { headers, headerRowNumber, missingHeaders } = findProductMasterHeaderInRows(sheetRows);
+  const rows = sheetRows.slice(headerRowNumber).map((row, index) => ({
+    rowNumber: headerRowNumber + index + 1,
+    rowObject: buildRowObjectFromSheetRow(headers, row),
+  }));
+
+  return {
+    sheetName,
+    missingHeaders,
+    rows,
   };
 }
 
@@ -181,7 +306,7 @@ export async function POST(request: Request) {
   }
 
   if (!isSupportedExcelFile(file)) {
-    return jsonError("엑셀 파일(.xlsx, .xlsm)만 업로드할 수 있습니다.", 400);
+    return jsonError("엑셀 파일(.xlsx, .xlsm, .xls)만 업로드할 수 있습니다.", 400);
   }
 
   if (file.size <= 0) {
@@ -192,27 +317,26 @@ export async function POST(request: Request) {
     return jsonError("엑셀 파일은 5MB 이하만 업로드할 수 있습니다.", 400);
   }
 
-  const workbook = new ExcelJS.Workbook();
+  let parsedSheet: ParsedProductSheet;
 
   try {
-    const buffer = (await file.arrayBuffer()) as unknown as Parameters<
-      ExcelJS.Workbook["xlsx"]["load"]
-    >[0];
-    await workbook.xlsx.load(buffer);
+    const buffer = Buffer.from(await file.arrayBuffer());
+    parsedSheet = isLegacyExcelFile(file)
+      ? parseLegacyProductSheet(buffer)
+      : await parseOpenXmlProductSheet(buffer);
   } catch {
-    return jsonError("엑셀 파일을 읽을 수 없습니다.", 400);
+    return jsonError(
+      "엑셀 파일을 읽을 수 없습니다. 계속 실패하면 파일을 .xlsx로 다시 저장해서 업로드해 주세요.",
+      400,
+    );
   }
 
-  const worksheet = workbook.worksheets[0];
-
-  if (!worksheet) {
+  if (!parsedSheet.sheetName) {
     return jsonError("엑셀 시트를 찾을 수 없습니다.", 400);
   }
 
-  const { headers, headerRowNumber, missingHeaders } = findProductMasterHeader(worksheet);
-
-  if (missingHeaders.length > 0) {
-    return jsonError(`필수 헤더가 없습니다: ${missingHeaders.join(", ")}`, 400);
+  if (parsedSheet.missingHeaders.length > 0) {
+    return jsonError(`필수 헤더가 없습니다: ${parsedSheet.missingHeaders.join(", ")}`, 400);
   }
 
   const validationErrors: UploadValidationError[] = [];
@@ -221,10 +345,7 @@ export async function POST(request: Request) {
   let totalRows = 0;
   let skippedRows = 0;
 
-  for (let rowNumber = headerRowNumber + 1; rowNumber <= worksheet.rowCount; rowNumber += 1) {
-    const worksheetRow = worksheet.getRow(rowNumber);
-    const rowObject = buildRowObject(headers, worksheetRow);
-
+  for (const { rowNumber, rowObject } of parsedSheet.rows) {
     if (isEmptyProductMasterRow(rowObject)) {
       skippedRows += 1;
       continue;
@@ -308,7 +429,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     importedCount: rowsToUpsert.length,
     report: {
-      sheetName: worksheet.name,
+      sheetName: parsedSheet.sheetName,
       totalRows,
       importedRows: rowsToUpsert.length,
       skippedRows,

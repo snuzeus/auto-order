@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
+import * as XLSX from "xlsx";
 
 import { requireAdmin } from "@/lib/auth/admin";
 import { normalizeSupplierName } from "@/lib/domain/supplier-name";
@@ -39,6 +40,24 @@ type UploadValidationError = {
   rowNumber: number;
   reason: string;
 };
+
+type CellLike = {
+  value: unknown;
+};
+
+type RowLike = {
+  cellCount: number;
+  actualCellCount: number;
+  getCell: (cellNumber: number) => CellLike;
+};
+
+type WorksheetLike = {
+  name: string;
+  rowCount: number;
+  getRow: (rowNumber: number) => RowLike;
+};
+
+type SheetRow = unknown[];
 
 const MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024;
 
@@ -97,10 +116,14 @@ function getCellText(value: unknown): string {
 function isSupportedExcelFile(file: File): boolean {
   const name = file.name.toLowerCase();
 
-  return name.endsWith(".xlsx") || name.endsWith(".xlsm");
+  return name.endsWith(".xlsx") || name.endsWith(".xlsm") || name.endsWith(".xls");
 }
 
-function readHeaderNames(worksheet: ExcelJS.Worksheet): string[] {
+function isLegacyExcelFile(file: File): boolean {
+  return file.name.toLowerCase().endsWith(".xls");
+}
+
+function readHeaderNames(worksheet: WorksheetLike): string[] {
   const headerRow = worksheet.getRow(1);
   const columnCount = Math.max(headerRow.cellCount, headerRow.actualCellCount);
 
@@ -109,7 +132,7 @@ function readHeaderNames(worksheet: ExcelJS.Worksheet): string[] {
   );
 }
 
-function buildRowObject(headers: string[], row: ExcelJS.Row): Record<string, string> {
+function buildRowObject(headers: string[], row: RowLike): Record<string, string> {
   return headers.reduce<Record<string, string>>((record, header, index) => {
     if (!header) {
       return record;
@@ -118,6 +141,48 @@ function buildRowObject(headers: string[], row: ExcelJS.Row): Record<string, str
     record[header] = getCellText(row.getCell(index + 1).value);
     return record;
   }, {});
+}
+
+function legacyRowsToWorksheet(sheetName: string, rows: SheetRow[]): WorksheetLike {
+  return {
+    name: sheetName || "Sheet1",
+    rowCount: rows.length,
+    getRow(rowNumber: number) {
+      const rowValues = rows[rowNumber - 1] ?? [];
+
+      return {
+        cellCount: rowValues.length,
+        actualCellCount: rowValues.filter((value) => getCellText(value) !== "").length,
+        getCell(cellNumber: number) {
+          return {
+            value: rowValues[cellNumber - 1] ?? "",
+          };
+        },
+      };
+    },
+  };
+}
+
+function parseLegacyWorkbook(buffer: Buffer): WorksheetLike | null {
+  const workbook = XLSX.read(buffer, {
+    type: "buffer",
+    cellDates: true,
+  });
+  const sheetName = workbook.SheetNames[0] ?? "";
+  const worksheet = sheetName ? workbook.Sheets[sheetName] : undefined;
+
+  if (!worksheet) {
+    return null;
+  }
+
+  const rows = XLSX.utils.sheet_to_json<SheetRow>(worksheet, {
+    header: 1,
+    raw: false,
+    defval: "",
+    blankrows: false,
+  });
+
+  return legacyRowsToWorksheet(sheetName, rows);
 }
 
 function hasAnyValue(row: Record<string, string>): boolean {
@@ -211,7 +276,7 @@ async function readWorkbookFromRequest(request: NextRequest) {
   }
 
   if (!isSupportedExcelFile(file)) {
-    return { error: jsonError("엑셀 파일(.xlsx, .xlsm)만 업로드할 수 있습니다.", 400) };
+    return { error: jsonError("엑셀 파일(.xlsx, .xlsm, .xls)만 업로드할 수 있습니다.", 400) };
   }
 
   if (file.size <= 0) {
@@ -222,18 +287,27 @@ async function readWorkbookFromRequest(request: NextRequest) {
     return { error: jsonError("엑셀 파일은 5MB 이하만 업로드할 수 있습니다.", 400) };
   }
 
-  const workbook = new ExcelJS.Workbook();
+  const buffer = Buffer.from(await file.arrayBuffer());
+  let worksheet: WorksheetLike | null;
 
   try {
-    const buffer = (await file.arrayBuffer()) as unknown as Parameters<
-      ExcelJS.Workbook["xlsx"]["load"]
-    >[0];
-    await workbook.xlsx.load(buffer);
+    if (isLegacyExcelFile(file)) {
+      worksheet = parseLegacyWorkbook(buffer);
+    } else {
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(
+        buffer as unknown as Parameters<ExcelJS.Workbook["xlsx"]["load"]>[0],
+      );
+      worksheet = workbook.worksheets[0] ?? null;
+    }
   } catch {
-    return { error: jsonError("엑셀 파일을 읽을 수 없습니다.", 400) };
+    return {
+      error: jsonError(
+        "엑셀 파일을 읽을 수 없습니다. 계속 실패하면 파일을 .xlsx로 다시 저장해서 업로드해 주세요.",
+        400,
+      ),
+    };
   }
-
-  const worksheet = workbook.worksheets[0];
 
   if (!worksheet) {
     return { error: jsonError("엑셀 시트를 찾을 수 없습니다.", 400) };

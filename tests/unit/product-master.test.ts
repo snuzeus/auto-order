@@ -18,6 +18,7 @@ describe("normalizeProductMasterRow", () => {
       spec: "",
       supplierName: "샘물유통",
       unitPrice: 1250,
+      minimumOrderQuantity: null,
     });
   });
 
@@ -38,6 +39,33 @@ describe("normalizeProductMasterRow", () => {
       spec: "",
       supplierName: "샘물유통",
       unitPrice: 1250.5,
+      minimumOrderQuantity: null,
+    });
+  });
+
+  it("maps minimum order quantity and ignores zero values", () => {
+    expect(
+      normalizeProductMasterRow({
+        상품코드: "88010001",
+        상품명: "생수",
+        거래처: "샘물유통",
+        공급가: "1000",
+        최소발주수량: "12",
+      }),
+    ).toMatchObject({
+      minimumOrderQuantity: 12,
+    });
+
+    expect(
+      normalizeProductMasterRow({
+        상품코드: "88010001",
+        상품명: "생수",
+        거래처: "샘물유통",
+        공급가: "1000",
+        최소발주수량: "0",
+      }),
+    ).toMatchObject({
+      minimumOrderQuantity: null,
     });
   });
 

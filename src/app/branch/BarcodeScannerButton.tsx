@@ -48,6 +48,29 @@ export default function BarcodeScannerButton({
   const [starting, setStarting] = useState(false);
   const [torchAvailable, setTorchAvailable] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
+  const [showCameraButton, setShowCameraButton] = useState(false);
+
+  useEffect(() => {
+    const updateCameraButtonVisibility = () => {
+      const hasCameraApi = Boolean(navigator.mediaDevices?.getUserMedia);
+      const isTouchDevice =
+        navigator.maxTouchPoints > 0 ||
+        window.matchMedia("(pointer: coarse)").matches;
+      const isSmallScreen = window.matchMedia("(max-width: 768px)").matches;
+
+      setShowCameraButton(hasCameraApi && (isTouchDevice || isSmallScreen));
+    };
+
+    updateCameraButtonVisibility();
+
+    window.addEventListener("resize", updateCameraButtonVisibility);
+    window.addEventListener("orientationchange", updateCameraButtonVisibility);
+
+    return () => {
+      window.removeEventListener("resize", updateCameraButtonVisibility);
+      window.removeEventListener("orientationchange", updateCameraButtonVisibility);
+    };
+  }, []);
 
   const stopScanner = useCallback(() => {
     stopRef.current?.();
@@ -86,6 +109,7 @@ export default function BarcodeScannerButton({
     }
 
     let cancelled = false;
+
     async function startScanner() {
       setStarting(true);
       setError("");
@@ -175,18 +199,20 @@ export default function BarcodeScannerButton({
 
   return (
     <>
-      <button
-        className={`hidden min-h-14 w-full items-center justify-center gap-2 bg-slate-900 px-5 py-4 text-lg font-semibold text-white disabled:bg-slate-300 [@media(pointer:coarse)]:flex ${FOCUS_VISIBLE_CLASS}`}
-        disabled={disabled}
-        type="button"
-        onClick={() => {
-          lastDetectedRef.current = "";
-          setOpen(true);
-        }}
-      >
-        <Camera aria-hidden="true" size={22} />
-        바코드 촬영
-      </button>
+      {showCameraButton ? (
+        <button
+          className={`flex min-h-14 w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-5 py-4 text-lg font-semibold text-white shadow-sm disabled:bg-slate-300 ${FOCUS_VISIBLE_CLASS}`}
+          disabled={disabled}
+          type="button"
+          onClick={() => {
+            lastDetectedRef.current = "";
+            setOpen(true);
+          }}
+        >
+          <Camera aria-hidden="true" size={22} />
+          바코드 촬영
+        </button>
+      ) : null}
 
       {open ? (
         <div

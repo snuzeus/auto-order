@@ -42,6 +42,7 @@ export const orderItemDraftSchema = z.object({
     .transform((value) => value ?? ""),
   supplierName: optionalTrimmedText(),
   unitPrice: z.number().min(0).optional(),
+  minimumOrderQuantity: z.number().int().min(1).optional(),
   quantity: z.number().int().min(0),
   isUnregistered: z.boolean(),
   memo: optionalTrimmedText(),

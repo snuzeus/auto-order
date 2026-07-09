@@ -22,6 +22,7 @@ type OrderItemRow = {
   supplier_name: string | null;
   products?: {
     unit_price: number | string | null;
+    minimum_order_quantity: number | null;
   } | null;
   quantity: number;
   is_unregistered: boolean;
@@ -71,6 +72,11 @@ function mapOrderItem(row: OrderItemRow): OrderItemDraft {
       row.products?.unit_price === null || row.products?.unit_price === undefined
         ? undefined
         : Number(row.products.unit_price),
+    minimumOrderQuantity:
+      row.products?.minimum_order_quantity === null ||
+      row.products?.minimum_order_quantity === undefined
+        ? undefined
+        : row.products.minimum_order_quantity,
     quantity: row.quantity,
     isUnregistered: row.is_unregistered,
     memo: row.memo ?? undefined,
@@ -122,6 +128,49 @@ function mapOrderRpcError(message: string | undefined): {
   };
 }
 
+async function validateMinimumOrderQuantities(
+  supabase: ReturnType<typeof createServiceClient>,
+  items: OrderItemDraft[],
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const submittedItems = items.filter((item) => item.quantity > 0 && item.productId);
+  const productIds = Array.from(new Set(submittedItems.map((item) => item.productId as string)));
+
+  if (productIds.length === 0) {
+    return { ok: true };
+  }
+
+  const { data, error } = await supabase
+    .from("products")
+    .select("id, name, minimum_order_quantity")
+    .in("id", productIds);
+
+  if (error) {
+    return { ok: false, message: ORDER_ERROR_MESSAGES.saveFailed };
+  }
+
+  const productsById = new Map(
+    ((data ?? []) as Array<{
+      id: string;
+      name: string;
+      minimum_order_quantity: number | null;
+    }>).map((product) => [product.id, product]),
+  );
+
+  for (const item of submittedItems) {
+    const product = productsById.get(item.productId as string);
+    const minimumOrderQuantity = product?.minimum_order_quantity ?? null;
+
+    if (minimumOrderQuantity && item.quantity < minimumOrderQuantity) {
+      return {
+        ok: false,
+        message: `${product?.name ?? item.productName} 최소발주수량은 ${minimumOrderQuantity}개입니다.`,
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
 export async function GET(request: NextRequest) {
   const branchId = request.nextUrl.searchParams.get("branchId")?.trim() ?? "";
   const orderDate = request.nextUrl.searchParams.get("orderDate")?.trim() ?? "";
@@ -134,7 +183,7 @@ export async function GET(request: NextRequest) {
   const { data, error } = await supabase
     .from("orders")
     .select(
-      "id, status, branch_id, order_date, order_items(product_id, barcode, product_code, product_name, spec, supplier_name, quantity, is_unregistered, memo, products(unit_price))",
+      "id, status, branch_id, order_date, order_items(product_id, barcode, product_code, product_name, spec, supplier_name, quantity, is_unregistered, memo, products(unit_price, minimum_order_quantity))",
     )
     .eq("branch_id", branchId)
     .eq("order_date", orderDate)
@@ -181,11 +230,14 @@ export async function POST(request: Request) {
     return jsonError(ORDER_ERROR_MESSAGES.emptySubmittedItems, 400);
   }
 
-  // MVP trust boundary: branch selection is public, so API validation plus the
-  // service-role RPC enforce what can actually be written for a branch/date.
-  const rpcItems = buildSubmitBranchOrderItems(items);
   const supabase = createServiceClient();
+  const minimumQuantityValidation = await validateMinimumOrderQuantities(supabase, items);
 
+  if (!minimumQuantityValidation.ok) {
+    return jsonError(minimumQuantityValidation.message, 400);
+  }
+
+  const rpcItems = buildSubmitBranchOrderItems(items);
   const { data, error } = await supabase.rpc("submit_branch_order", {
     p_branch_id: branchId,
     p_order_date: orderDate,

@@ -14,6 +14,7 @@ export type Product = {
   spec: string;
   supplierName: string;
   unitPrice: number;
+  minimumOrderQuantity?: number;
   isActive: boolean;
 };
 
@@ -25,6 +26,7 @@ export type OrderItemDraft = {
   spec: string;
   supplierName?: string;
   unitPrice?: number;
+  minimumOrderQuantity?: number;
   quantity: number;
   isUnregistered: boolean;
   memo?: string;
