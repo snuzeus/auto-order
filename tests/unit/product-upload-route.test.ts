@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import * as XLSX from "xlsx";
 
 const {
   requireAdminMock,
@@ -113,6 +114,25 @@ function createFile(name: string, size = 8): File {
   return file;
 }
 
+function createLegacyXlsFile(rows: unknown[][]): File {
+  const worksheet = XLSX.utils.aoa_to_sheet(rows);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1");
+  const buffer = XLSX.write(workbook, {
+    bookType: "biff8",
+    type: "array",
+  }) as ArrayBuffer;
+  const file = new File([buffer], "product-master.xls", {
+    type: "application/vnd.ms-excel",
+  });
+
+  Object.defineProperty(file, "arrayBuffer", {
+    value: vi.fn().mockResolvedValue(buffer),
+  });
+
+  return file;
+}
+
 async function postWithFile(file?: File) {
   const formData = new FormData();
 
@@ -167,7 +187,7 @@ describe("POST /api/admin/products/upload", () => {
 
     expect(response.status).toBe(400);
     expect(body).toEqual({
-      error: "엑셀 파일(.xlsx, .xlsm)만 업로드할 수 있습니다.",
+      error: "엑셀 파일(.xlsx, .xlsm, .xls)만 업로드할 수 있습니다.",
     });
     expect(workbookLoadMock).not.toHaveBeenCalled();
   });
@@ -372,6 +392,54 @@ describe("POST /api/admin/products/upload", () => {
           supplier_name: "샘물유통",
           unit_price: 1250,
           minimum_order_quantity: 12,
+          is_active: true,
+        },
+      ],
+      {
+        onConflict: "barcode",
+      },
+    );
+  });
+
+  it("upserts validated rows from legacy xls files", async () => {
+    requireAdminMock.mockResolvedValue({
+      ok: true,
+      userId: "user-1",
+      adminId: "admin-1",
+    });
+    fromMock.mockReturnValue({
+      update: updateMock.mockReturnValue({
+        not: notMock.mockResolvedValue({ error: null }),
+      }),
+      delete: deleteMock.mockReturnValue({
+        neq: neqMock.mockResolvedValue({ error: null }),
+      }),
+      upsert: upsertMock.mockResolvedValue({
+        error: null,
+      }),
+    });
+
+    const response = await postWithFile(
+      createLegacyXlsFile([
+        ["바코드 번호", "상품코드", "상품명", "규격", "납품 거래처명", "공급가", "최소발주수량"],
+        ["88010002", "P-002", "샴푸", "", "다원(프로랑스)", "2,500", "6"],
+      ]),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.importedCount).toBe(1);
+    expect(workbookLoadMock).not.toHaveBeenCalled();
+    expect(upsertMock).toHaveBeenCalledWith(
+      [
+        {
+          barcode: "88010002",
+          product_code: "P-002",
+          name: "샴푸",
+          spec: "",
+          supplier_name: "다원(프로랑스)",
+          unit_price: 2500,
+          minimum_order_quantity: 6,
           is_active: true,
         },
       ],

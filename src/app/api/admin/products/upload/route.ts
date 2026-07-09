@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import { NextResponse } from "next/server";
+import * as XLSX from "xlsx";
 
 import { requireAdmin } from "@/lib/auth/admin";
 import {
@@ -31,6 +32,8 @@ type ParsedProductSheet = {
   missingHeaders: string[];
   rows: Array<{ rowNumber: number; rowObject: Record<string, unknown> }>;
 };
+
+type SheetRow = unknown[];
 
 const MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024;
 
@@ -89,7 +92,11 @@ function getCellText(value: unknown): string {
 function isSupportedExcelFile(file: File): boolean {
   const name = file.name.toLowerCase();
 
-  return name.endsWith(".xlsx") || name.endsWith(".xlsm");
+  return name.endsWith(".xlsx") || name.endsWith(".xlsm") || name.endsWith(".xls");
+}
+
+function isLegacyExcelFile(file: File): boolean {
+  return file.name.toLowerCase().endsWith(".xls");
 }
 
 function readHeaderNamesAtRow(worksheet: ExcelJS.Worksheet, rowNumber: number): string[] {
@@ -147,6 +154,55 @@ function buildRowObject(headers: string[], row: ExcelJS.Row): Record<string, unk
   }, {});
 }
 
+function findProductMasterHeaderInRows(rows: SheetRow[]): {
+  headers: string[];
+  headerRowNumber: number;
+  missingHeaders: string[];
+} {
+  let fallbackHeaders = rows[0]?.map((value) => getCellText(value)) ?? [];
+  let fallbackMissingHeaders = getMissingRequiredProductMasterHeaders(fallbackHeaders);
+  let fallbackHeaderRowNumber = 1;
+
+  for (let rowIndex = 0; rowIndex < Math.min(10, rows.length); rowIndex += 1) {
+    const headers = rows[rowIndex]?.map((value) => getCellText(value)) ?? [];
+    const missingHeaders = getMissingRequiredProductMasterHeaders(headers);
+
+    if (missingHeaders.length < fallbackMissingHeaders.length) {
+      fallbackHeaders = headers;
+      fallbackMissingHeaders = missingHeaders;
+      fallbackHeaderRowNumber = rowIndex + 1;
+    }
+
+    if (missingHeaders.length === 0) {
+      return {
+        headers,
+        headerRowNumber: rowIndex + 1,
+        missingHeaders,
+      };
+    }
+  }
+
+  return {
+    headers: fallbackHeaders,
+    headerRowNumber: fallbackHeaderRowNumber,
+    missingHeaders: fallbackMissingHeaders,
+  };
+}
+
+function buildRowObjectFromSheetRow(
+  headers: string[],
+  row: SheetRow | undefined,
+): Record<string, unknown> {
+  return headers.reduce<Record<string, unknown>>((record, header, index) => {
+    if (!header) {
+      return record;
+    }
+
+    record[header] = getCellText(row?.[index]);
+    return record;
+  }, {});
+}
+
 function mapProductRow(row: ProductMasterUploadRow): ProductUpsertRow {
   return {
     barcode: row.barcode,
@@ -193,6 +249,41 @@ async function parseOpenXmlProductSheet(buffer: Buffer): Promise<ParsedProductSh
   };
 }
 
+function parseLegacyProductSheet(buffer: Buffer): ParsedProductSheet {
+  const workbook = XLSX.read(buffer, {
+    type: "buffer",
+    cellDates: true,
+  });
+  const sheetName = workbook.SheetNames[0] ?? "";
+  const worksheet = sheetName ? workbook.Sheets[sheetName] : undefined;
+
+  if (!worksheet) {
+    return {
+      sheetName: "",
+      missingHeaders: getMissingRequiredProductMasterHeaders([]),
+      rows: [],
+    };
+  }
+
+  const sheetRows = XLSX.utils.sheet_to_json<SheetRow>(worksheet, {
+    header: 1,
+    raw: false,
+    defval: "",
+    blankrows: false,
+  });
+  const { headers, headerRowNumber, missingHeaders } = findProductMasterHeaderInRows(sheetRows);
+  const rows = sheetRows.slice(headerRowNumber).map((row, index) => ({
+    rowNumber: headerRowNumber + index + 1,
+    rowObject: buildRowObjectFromSheetRow(headers, row),
+  }));
+
+  return {
+    sheetName,
+    missingHeaders,
+    rows,
+  };
+}
+
 export async function POST(request: Request) {
   const admin = await requireAdmin();
 
@@ -215,7 +306,7 @@ export async function POST(request: Request) {
   }
 
   if (!isSupportedExcelFile(file)) {
-    return jsonError("엑셀 파일(.xlsx, .xlsm)만 업로드할 수 있습니다.", 400);
+    return jsonError("엑셀 파일(.xlsx, .xlsm, .xls)만 업로드할 수 있습니다.", 400);
   }
 
   if (file.size <= 0) {
@@ -230,9 +321,14 @@ export async function POST(request: Request) {
 
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
-    parsedSheet = await parseOpenXmlProductSheet(buffer);
+    parsedSheet = isLegacyExcelFile(file)
+      ? parseLegacyProductSheet(buffer)
+      : await parseOpenXmlProductSheet(buffer);
   } catch {
-    return jsonError("엑셀 파일을 읽을 수 없습니다.", 400);
+    return jsonError(
+      "엑셀 파일을 읽을 수 없습니다. 계속 실패하면 파일을 .xlsx로 다시 저장해서 업로드해 주세요.",
+      400,
+    );
   }
 
   if (!parsedSheet.sheetName) {
