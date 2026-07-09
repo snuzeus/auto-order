@@ -65,6 +65,16 @@ function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
 }
 
+function summarizeHeaders(headers: string[]): string {
+  const visibleHeaders = headers.filter(Boolean);
+
+  if (visibleHeaders.length === 0) {
+    return "읽힌 열 없음";
+  }
+
+  return visibleHeaders.slice(0, 20).join(", ");
+}
+
 function getCellText(value: unknown): string {
   if (value === null || value === undefined) {
     return "";
@@ -191,6 +201,10 @@ function hasAnyValue(row: Record<string, string>): boolean {
 
 function missingHeaders(headers: string[], requiredHeaders: string[]): string[] {
   return requiredHeaders.filter((header) => !headers.includes(header));
+}
+
+function getMissingRowFields(row: Record<string, string>, requiredFields: string[]): string[] {
+  return requiredFields.filter((field) => !row[field]?.trim());
 }
 
 function mapBranch(row: BranchRow) {
@@ -466,7 +480,15 @@ export async function POST(request: NextRequest) {
   const missing = missingHeaders(headers, requiredHeaders);
 
   if (missing.length > 0) {
-    return jsonError(`필수 헤더가 없습니다: ${missing.join(", ")}`, 400);
+    return jsonError(
+      [
+        `${kind === "branches" ? "지사" : "납품처"} 엑셀 필수 열을 찾지 못했습니다: ${missing.join(", ")}`,
+        `필수 열: ${requiredHeaders.join(", ")}`,
+        `현재 읽힌 열: ${summarizeHeaders(headers)}`,
+        "첫 번째 행에 헤더가 있어야 합니다.",
+      ].join(" / "),
+      400,
+    );
   }
 
   const validationErrors: UploadValidationError[] = [];
@@ -486,7 +508,7 @@ export async function POST(request: NextRequest) {
       email: string;
       updated_at: string;
     }> = [];
-    const seenBusinessNumbers = new Set<string>();
+    const seenBusinessNumbers = new Map<string, number>();
     let totalRows = 0;
     let skippedRows = 0;
 
@@ -504,23 +526,27 @@ export async function POST(request: NextRequest) {
       const name = row["거래처명"]?.trim() ?? "";
       const address = row["주소"]?.trim() ?? "";
 
-      if (!businessNumber || !name || !address) {
+      const missingFields = getMissingRowFields(row, ["사업자등록번호", "거래처명", "주소"]);
+
+      if (missingFields.length > 0) {
         validationErrors.push({
           rowNumber,
-          reason: "사업자등록번호, 거래처명, 주소는 필수입니다.",
+          reason: `필수 값이 비어 있습니다: ${missingFields.join(", ")}. 해당 행의 ${missingFields.join(", ")} 열을 채워 주세요.`,
         });
         continue;
       }
 
-      if (seenBusinessNumbers.has(businessNumber)) {
+      const duplicateRowNumber = seenBusinessNumbers.get(businessNumber);
+
+      if (duplicateRowNumber) {
         validationErrors.push({
           rowNumber,
-          reason: "중복된 사업자등록번호입니다.",
+          reason: `중복된 사업자등록번호입니다. ${duplicateRowNumber}행과 같은 값입니다.`,
         });
         continue;
       }
 
-      seenBusinessNumbers.add(businessNumber);
+      seenBusinessNumbers.set(businessNumber, rowNumber);
       rowsToUpsert.push({
         code: businessNumber,
         name,
@@ -613,7 +639,7 @@ export async function POST(request: NextRequest) {
     is_active: true;
     updated_at: string;
   }> = [];
-  const seenBusinessNumbers = new Set<string>();
+  const seenBusinessNumbers = new Map<string, number>();
   let totalRows = 0;
   let skippedRows = 0;
 
@@ -630,23 +656,27 @@ export async function POST(request: NextRequest) {
     const businessNumber = row["사업자등록번호"]?.trim() ?? "";
     const name = normalizeSupplierName(row["거래처명"] ?? "");
 
-    if (!businessNumber || !name) {
+    const missingFields = getMissingRowFields(row, ["사업자등록번호", "거래처명"]);
+
+    if (missingFields.length > 0) {
       validationErrors.push({
         rowNumber,
-        reason: "사업자등록번호와 거래처명은 필수입니다.",
+        reason: `필수 값이 비어 있습니다: ${missingFields.join(", ")}. 해당 행의 ${missingFields.join(", ")} 열을 채워 주세요.`,
       });
       continue;
     }
 
-    if (seenBusinessNumbers.has(businessNumber)) {
+    const duplicateRowNumber = seenBusinessNumbers.get(businessNumber);
+
+    if (duplicateRowNumber) {
       validationErrors.push({
         rowNumber,
-        reason: "중복된 사업자등록번호입니다.",
+        reason: `중복된 사업자등록번호입니다. ${duplicateRowNumber}행과 같은 값입니다.`,
       });
       continue;
     }
 
-    seenBusinessNumbers.add(businessNumber);
+    seenBusinessNumbers.set(businessNumber, rowNumber);
     rowsToUpsert.push({
       business_registration_number: businessNumber,
       name,

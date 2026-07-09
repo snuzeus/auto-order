@@ -29,6 +29,7 @@ type ProductUpsertRow = {
 
 type ParsedProductSheet = {
   sheetName: string;
+  headers: string[];
   missingHeaders: string[];
   rows: Array<{ rowNumber: number; rowObject: Record<string, unknown> }>;
 };
@@ -36,9 +37,21 @@ type ParsedProductSheet = {
 type SheetRow = unknown[];
 
 const MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024;
+const PRODUCT_MASTER_REQUIRED_HEADER_HELP =
+  "필수 열: 상품코드, 상품명. 사용 가능한 열 이름 예: 바코드 번호/바코드, 상품코드, 상품명, 납품 거래처명, 공급가, 최소발주수량";
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
+}
+
+function summarizeHeaders(headers: string[]): string {
+  const visibleHeaders = headers.filter(Boolean);
+
+  if (visibleHeaders.length === 0) {
+    return "읽힌 열 없음";
+  }
+
+  return visibleHeaders.slice(0, 20).join(", ");
 }
 
 function getCellText(value: unknown): string {
@@ -216,6 +229,20 @@ function mapProductRow(row: ProductMasterUploadRow): ProductUpsertRow {
   };
 }
 
+function missingRequiredProductValues(row: Record<string, unknown>): string[] {
+  const missing: string[] = [];
+
+  if (!getCellText(row["상품코드"]) && !getCellText(row["바코드 번호"]) && !getCellText(row["바코드"])) {
+    missing.push("상품코드");
+  }
+
+  if (!getCellText(row["상품명"])) {
+    missing.push("상품명");
+  }
+
+  return missing;
+}
+
 async function parseOpenXmlProductSheet(buffer: Buffer): Promise<ParsedProductSheet> {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(
@@ -227,6 +254,7 @@ async function parseOpenXmlProductSheet(buffer: Buffer): Promise<ParsedProductSh
   if (!worksheet) {
     return {
       sheetName: "",
+      headers: [],
       missingHeaders: getMissingRequiredProductMasterHeaders([]),
       rows: [],
     };
@@ -244,6 +272,7 @@ async function parseOpenXmlProductSheet(buffer: Buffer): Promise<ParsedProductSh
 
   return {
     sheetName: worksheet.name || "Sheet1",
+    headers,
     missingHeaders,
     rows,
   };
@@ -260,6 +289,7 @@ function parseLegacyProductSheet(buffer: Buffer): ParsedProductSheet {
   if (!worksheet) {
     return {
       sheetName: "",
+      headers: [],
       missingHeaders: getMissingRequiredProductMasterHeaders([]),
       rows: [],
     };
@@ -279,6 +309,7 @@ function parseLegacyProductSheet(buffer: Buffer): ParsedProductSheet {
 
   return {
     sheetName,
+    headers,
     missingHeaders,
     rows,
   };
@@ -336,12 +367,21 @@ export async function POST(request: Request) {
   }
 
   if (parsedSheet.missingHeaders.length > 0) {
-    return jsonError(`필수 헤더가 없습니다: ${parsedSheet.missingHeaders.join(", ")}`, 400);
+    return jsonError(
+      [
+        `상품마스터 필수 열을 찾지 못했습니다: ${parsedSheet.missingHeaders.join(", ")}`,
+        `시트: ${parsedSheet.sheetName || "-"}`,
+        PRODUCT_MASTER_REQUIRED_HEADER_HELP,
+        `현재 읽힌 열: ${summarizeHeaders(parsedSheet.headers)}`,
+        "엑셀 상단 10행 안에 헤더 행이 있어야 합니다.",
+      ].join(" / "),
+      400,
+    );
   }
 
   const validationErrors: UploadValidationError[] = [];
   const rowsToUpsert: ProductUpsertRow[] = [];
-  const seenBarcodes = new Set<string>();
+  const seenBarcodes = new Map<string, number>();
   let totalRows = 0;
   let skippedRows = 0;
 
@@ -354,17 +394,29 @@ export async function POST(request: Request) {
     totalRows += 1;
 
     try {
-      const normalizedRow = normalizeProductMasterRow(rowObject);
+      const missingValues = missingRequiredProductValues(rowObject);
 
-      if (seenBarcodes.has(normalizedRow.barcode)) {
+      if (missingValues.length > 0) {
         validationErrors.push({
           rowNumber,
-          reason: "중복된 바코드 번호입니다.",
+          reason: `필수 값이 비어 있습니다: ${missingValues.join(", ")}. 해당 행의 ${missingValues.join(", ")} 열을 채워 주세요.`,
         });
         continue;
       }
 
-      seenBarcodes.add(normalizedRow.barcode);
+      const normalizedRow = normalizeProductMasterRow(rowObject);
+
+      const duplicateRowNumber = seenBarcodes.get(normalizedRow.barcode);
+
+      if (duplicateRowNumber) {
+        validationErrors.push({
+          rowNumber,
+          reason: `중복된 바코드 번호입니다. ${duplicateRowNumber}행과 같은 값입니다.`,
+        });
+        continue;
+      }
+
+      seenBarcodes.set(normalizedRow.barcode, rowNumber);
       rowsToUpsert.push(mapProductRow(normalizedRow));
     } catch (error) {
       validationErrors.push({

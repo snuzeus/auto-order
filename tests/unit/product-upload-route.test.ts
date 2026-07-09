@@ -243,8 +243,44 @@ describe("POST /api/admin/products/upload", () => {
     const body = await response.json();
 
     expect(response.status).toBe(400);
+    expect(body.error).toContain("상품마스터 필수 열을 찾지 못했습니다: 상품명");
+    expect(body.error).toContain("필수 열: 상품코드, 상품명");
+    expect(body.error).toContain("현재 읽힌 열: 바코드 번호, 상품코드, 규격, 공급가");
+    expect(fromMock).not.toHaveBeenCalled();
+  });
+
+  it("returns detailed row errors for missing required values", async () => {
+    requireAdminMock.mockResolvedValue({
+      ok: true,
+      userId: "user-1",
+      adminId: "admin-1",
+    });
+    workbookLoadMock.mockResolvedValue(undefined);
+    worksheetState.current = [
+      createWorksheet([
+        {
+          "바코드 번호": "88010001",
+          상품코드: "",
+          상품명: "",
+          규격: "500ml",
+          "납품 거래처명": "하나유통",
+          공급가: "1000",
+        },
+      ]),
+    ];
+
+    const response = await postWithFile(createFile("product-master.xlsx"));
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
     expect(body).toEqual({
-      error: "필수 헤더가 없습니다: 상품명",
+      error: "행별 오류를 확인해 주세요.",
+      errors: [
+        {
+          rowNumber: 2,
+          reason: "필수 값이 비어 있습니다: 상품명. 해당 행의 상품명 열을 채워 주세요.",
+        },
+      ],
     });
     expect(fromMock).not.toHaveBeenCalled();
   });
@@ -286,7 +322,7 @@ describe("POST /api/admin/products/upload", () => {
       errors: [
         {
           rowNumber: 3,
-          reason: "중복된 바코드 번호입니다.",
+          reason: "중복된 바코드 번호입니다. 2행과 같은 값입니다.",
         },
       ],
     });
