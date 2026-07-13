@@ -9,6 +9,7 @@ const {
   neqMock,
   upsertMock,
   fromMock,
+  rpcMock,
   workbookLoadMock,
   worksheetState,
 } = vi.hoisted(() => ({
@@ -19,6 +20,7 @@ const {
   neqMock: vi.fn(),
   upsertMock: vi.fn(),
   fromMock: vi.fn(),
+  rpcMock: vi.fn(),
   workbookLoadMock: vi.fn(),
   worksheetState: {
     current: [] as Array<{
@@ -36,6 +38,7 @@ vi.mock("@/lib/auth/admin", () => ({
 vi.mock("@/lib/supabase/service", () => ({
   createServiceClient: () => ({
     from: fromMock,
+    rpc: rpcMock,
   }),
 }));
 
@@ -154,6 +157,7 @@ describe("POST /api/admin/products/upload", () => {
     neqMock.mockReset();
     upsertMock.mockReset();
     fromMock.mockReset();
+    rpcMock.mockReset();
     workbookLoadMock.mockReset();
     worksheetState.current = [];
   });
@@ -365,7 +369,7 @@ describe("POST /api/admin/products/upload", () => {
     expect(fromMock).not.toHaveBeenCalled();
   });
 
-  it("upserts validated rows on success", async () => {
+  it("replaces validated rows atomically on success", async () => {
     requireAdminMock.mockResolvedValue({
       ok: true,
       userId: "user-1",
@@ -385,16 +389,9 @@ describe("POST /api/admin/products/upload", () => {
         },
       ]),
     ];
-    fromMock.mockReturnValue({
-      update: updateMock.mockReturnValue({
-        not: notMock.mockResolvedValue({ error: null }),
-      }),
-      delete: deleteMock.mockReturnValue({
-        neq: neqMock.mockResolvedValue({ error: null }),
-      }),
-      upsert: upsertMock.mockResolvedValue({
-        error: null,
-      }),
+    rpcMock.mockResolvedValue({
+      data: 1,
+      error: null,
     });
 
     const response = await postWithFile(createFile("product-master.xlsx"));
@@ -411,15 +408,9 @@ describe("POST /api/admin/products/upload", () => {
         sheetName: "Sheet1",
       },
     });
-    expect(fromMock).toHaveBeenCalledWith("products");
-    expect(updateMock).toHaveBeenCalledWith({
-      product_id: null,
-    });
-    expect(notMock).toHaveBeenCalledWith("product_id", "is", null);
-    expect(deleteMock).toHaveBeenCalled();
-    expect(neqMock).toHaveBeenCalledWith("id", "00000000-0000-0000-0000-000000000000");
-    expect(upsertMock).toHaveBeenCalledWith(
-      [
+    expect(fromMock).not.toHaveBeenCalled();
+    expect(rpcMock).toHaveBeenCalledWith("replace_product_master", {
+      p_products: [
         {
           barcode: "88010001",
           product_code: "P-001",
@@ -431,28 +422,18 @@ describe("POST /api/admin/products/upload", () => {
           is_active: true,
         },
       ],
-      {
-        onConflict: "barcode",
-      },
-    );
+    });
   });
 
-  it("upserts validated rows from legacy xls files", async () => {
+  it("replaces validated rows from legacy xls files", async () => {
     requireAdminMock.mockResolvedValue({
       ok: true,
       userId: "user-1",
       adminId: "admin-1",
     });
-    fromMock.mockReturnValue({
-      update: updateMock.mockReturnValue({
-        not: notMock.mockResolvedValue({ error: null }),
-      }),
-      delete: deleteMock.mockReturnValue({
-        neq: neqMock.mockResolvedValue({ error: null }),
-      }),
-      upsert: upsertMock.mockResolvedValue({
-        error: null,
-      }),
+    rpcMock.mockResolvedValue({
+      data: 1,
+      error: null,
     });
 
     const response = await postWithFile(
@@ -466,8 +447,9 @@ describe("POST /api/admin/products/upload", () => {
     expect(response.status).toBe(200);
     expect(body.importedCount).toBe(1);
     expect(workbookLoadMock).not.toHaveBeenCalled();
-    expect(upsertMock).toHaveBeenCalledWith(
-      [
+    expect(fromMock).not.toHaveBeenCalled();
+    expect(rpcMock).toHaveBeenCalledWith("replace_product_master", {
+      p_products: [
         {
           barcode: "88010002",
           product_code: "P-002",
@@ -479,9 +461,6 @@ describe("POST /api/admin/products/upload", () => {
           is_active: true,
         },
       ],
-      {
-        onConflict: "barcode",
-      },
-    );
+    });
   });
 });

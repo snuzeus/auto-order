@@ -1,6 +1,5 @@
 import ExcelJS from "exceljs";
 import { NextResponse } from "next/server";
-import * as XLSX from "xlsx";
 
 import { requireAdmin } from "@/lib/auth/admin";
 import {
@@ -278,7 +277,8 @@ async function parseOpenXmlProductSheet(buffer: Buffer): Promise<ParsedProductSh
   };
 }
 
-function parseLegacyProductSheet(buffer: Buffer): ParsedProductSheet {
+async function parseLegacyProductSheet(buffer: Buffer): Promise<ParsedProductSheet> {
+  const XLSX = await import("xlsx");
   const workbook = XLSX.read(buffer, {
     type: "buffer",
     cellDates: true,
@@ -353,7 +353,7 @@ export async function POST(request: Request) {
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
     parsedSheet = isLegacyExcelFile(file)
-      ? parseLegacyProductSheet(buffer)
+      ? await parseLegacyProductSheet(buffer)
       : await parseOpenXmlProductSheet(buffer);
   } catch {
     return jsonError(
@@ -438,48 +438,16 @@ export async function POST(request: Request) {
   }
 
   const supabase = createServiceClient();
-  const { error: clearOrderItemProductsError } = await supabase
-    .from("order_items")
-    .update({ product_id: null })
-    .not("product_id", "is", null);
-
-  if (clearOrderItemProductsError) {
-    return jsonError("상품 마스터 저장 중 기존 주문 상품 연결 정리에 실패했습니다.", 500);
-  }
-
-  const { error: deleteProductsError } = await supabase
-    .from("products")
-    .delete()
-    .neq("id", "00000000-0000-0000-0000-000000000000");
-
-  if (deleteProductsError) {
-    return jsonError("상품 마스터 저장 중 기존 상품 정리에 실패했습니다.", 500);
-  }
-
-  const { error } = await supabase.from("products").upsert(rowsToUpsert, {
-    onConflict: "barcode",
+  const { data: importedCount, error } = await supabase.rpc("replace_product_master", {
+    p_products: rowsToUpsert,
   });
 
   if (error) {
-    return jsonError("상품 마스터 저장 중 오류가 발생했습니다.", 500);
-  }
-
-  const supplierRows = Array.from(
-    new Set(rowsToUpsert.map((row) => row.supplier_name.trim()).filter(Boolean)),
-  ).map((name) => ({
-    name,
-    is_active: true,
-    updated_at: new Date().toISOString(),
-  }));
-
-  if (supplierRows.length > 0) {
-    await supabase.from("supplier_directory").upsert(supplierRows, {
-      onConflict: "name",
-    });
+    return jsonError(`상품 마스터 저장 중 오류가 발생했습니다. (${error.message})`, 500);
   }
 
   return NextResponse.json({
-    importedCount: rowsToUpsert.length,
+    importedCount: typeof importedCount === "number" ? importedCount : rowsToUpsert.length,
     report: {
       sheetName: parsedSheet.sheetName,
       totalRows,

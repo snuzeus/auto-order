@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
-import * as XLSX from "xlsx";
 
 import { requireAdmin } from "@/lib/auth/admin";
 import { normalizeSupplierName } from "@/lib/domain/supplier-name";
@@ -173,7 +172,8 @@ function legacyRowsToWorksheet(sheetName: string, rows: SheetRow[]): WorksheetLi
   };
 }
 
-function parseLegacyWorkbook(buffer: Buffer): WorksheetLike | null {
+async function parseLegacyWorkbook(buffer: Buffer): Promise<WorksheetLike | null> {
+  const XLSX = await import("xlsx");
   const workbook = XLSX.read(buffer, {
     type: "buffer",
     cellDates: true,
@@ -306,7 +306,7 @@ async function readWorkbookFromRequest(request: NextRequest) {
 
   try {
     if (isLegacyExcelFile(file)) {
-      worksheet = parseLegacyWorkbook(buffer);
+      worksheet = await parseLegacyWorkbook(buffer);
     } else {
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.load(
@@ -574,51 +574,22 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = createServiceClient();
-    const { error: deactivateError } = await supabase
-      .from("branches")
-      .update({
-        is_active: false,
-        updated_at: now,
-      })
-      .neq("id", "00000000-0000-0000-0000-000000000000");
+    const { data: importedCount, error: replaceError } = await supabase.rpc(
+      "replace_branches_from_upload",
+      {
+        p_branches: rowsToUpsert,
+      },
+    );
 
-    if (deactivateError) {
+    if (replaceError) {
       return jsonError(
-        `지사 엑셀을 저장하지 못했습니다. 기존 지사 비활성화 중 오류가 발생했습니다. (${deactivateError.message})`,
-        500,
+        `지사 엑셀을 저장하지 못했습니다. 지사 코드나 사업자등록번호 중복을 확인해 주세요. (${replaceError.message})`,
+        replaceError.code === "23505" ? 409 : 500,
       );
     }
 
-    for (const row of rowsToUpsert) {
-      const { data: updatedRows, error: updateError } = await supabase
-        .from("branches")
-        .update(row)
-        .eq("business_registration_number", row.business_registration_number)
-        .select("id");
-
-      if (updateError) {
-        return jsonError(
-          `지사 엑셀을 저장하지 못했습니다. 0007_master_data_uploads.sql을 실행했는지 확인해 주세요. (${updateError.message})`,
-          500,
-        );
-      }
-
-      if ((updatedRows ?? []).length > 0) {
-        continue;
-      }
-
-      const { error: insertError } = await supabase.from("branches").insert(row);
-
-      if (insertError) {
-        return jsonError(
-          `지사 엑셀을 저장하지 못했습니다. 지사 코드나 사업자등록번호 중복을 확인해 주세요. (${insertError.message})`,
-          insertError.code === "23505" ? 409 : 500,
-        );
-      }
-    }
-
     return NextResponse.json({
-      importedCount: rowsToUpsert.length,
+      importedCount: typeof importedCount === "number" ? importedCount : rowsToUpsert.length,
       report: {
         sheetName: worksheet.name,
         totalRows,
@@ -701,31 +672,22 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = createServiceClient();
-  const { error: deleteExistingSuppliersError } = await supabase
-    .from("supplier_directory")
-    .delete()
-    .neq("id", "00000000-0000-0000-0000-000000000000");
+  const { data: importedCount, error: replaceError } = await supabase.rpc(
+    "replace_supplier_directory_from_upload",
+    {
+      p_suppliers: rowsToUpsert,
+    },
+  );
 
-  if (deleteExistingSuppliersError) {
+  if (replaceError) {
     return jsonError(
-      `납품처 엑셀을 저장하지 못했습니다. 기존 납품처 정리 중 오류가 발생했습니다. (${deleteExistingSuppliersError.message})`,
-      500,
-    );
-  }
-
-  const { error: insertSuppliersError } = await supabase
-    .from("supplier_directory")
-    .insert(rowsToUpsert);
-
-  if (insertSuppliersError) {
-    return jsonError(
-      `납품처 엑셀을 저장하지 못했습니다. 엑셀 안의 사업자등록번호나 거래처명 중복을 확인해 주세요. (${insertSuppliersError.message})`,
-      insertSuppliersError.code === "23505" ? 409 : 500,
+      `납품처 엑셀을 저장하지 못했습니다. 엑셀 안의 사업자등록번호나 거래처명 중복을 확인해 주세요. (${replaceError.message})`,
+      replaceError.code === "23505" ? 409 : 500,
     );
   }
 
   return NextResponse.json({
-    importedCount: rowsToUpsert.length,
+    importedCount: typeof importedCount === "number" ? importedCount : rowsToUpsert.length,
     report: {
       sheetName: worksheet.name,
       totalRows,
