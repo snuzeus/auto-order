@@ -89,6 +89,7 @@ begin
 end;
 $$;
 
+revoke execute on function public.replace_product_master(jsonb) from public, anon, authenticated;
 grant execute on function public.replace_product_master(jsonb)
 to service_role;
 
@@ -171,6 +172,7 @@ begin
 end;
 $$;
 
+revoke execute on function public.replace_branches_from_upload(jsonb) from public, anon, authenticated;
 grant execute on function public.replace_branches_from_upload(jsonb)
 to service_role;
 
@@ -231,5 +233,6 @@ begin
 end;
 $$;
 
+revoke execute on function public.replace_supplier_directory_from_upload(jsonb) from public, anon, authenticated;
 grant execute on function public.replace_supplier_directory_from_upload(jsonb)
 to service_role;

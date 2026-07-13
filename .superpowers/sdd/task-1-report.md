@@ -154,3 +154,83 @@ Test Files  1 passed (1)
 - `0016_atomic_master_uploads.sql` is still an untracked migration file in this worktree, so there is no task-owned automated test covering its new behavior here.
 - Existing non-task test coverage for `0016` appears likely to be stale relative to the new requirements, but that file was outside the task-owned edit list and was left untouched.
 - I did not run a broader test suite because the brief explicitly asked for focused tests and the worktree already contains unrelated in-progress changes.
+
+## Reviewer follow-up fixes
+
+### Blocking issue 1: security definer RPC execute scope
+
+Reviewer note:
+
+- `0016_atomic_master_uploads.sql` needed explicit `revoke execute ... from public, anon, authenticated` statements before each `grant execute ... to service_role` for:
+  - `replace_product_master(jsonb)`
+  - `replace_branches_from_upload(jsonb)`
+  - `replace_supplier_directory_from_upload(jsonb)`
+
+Change made:
+
+- Added the three matching revoke statements immediately before their service-role grants in `supabase/migrations/0016_atomic_master_uploads.sql`.
+
+### Blocking issue 2: stale migration expectations
+
+Reviewer note:
+
+- `tests/unit/atomic-master-upload-migration.test.ts` still reflected the old destructive product replacement semantics.
+
+Change made:
+
+- Updated `tests/unit/atomic-master-upload-migration.test.ts` to assert:
+  - no `order_items.product_id` clearing
+  - no `delete from public.products`
+  - product upsert via `on conflict (barcode) do update`
+  - product deactivation for uploaded-absent rows
+  - explicit revoke-then-grant execute access control on the three security definer RPCs
+
+### Focused RED result
+
+After updating the migration test first, I ran the focused spec before changing `0016`:
+
+Command:
+
+```powershell
+npm.cmd test -- tests/unit/atomic-master-upload-migration.test.ts
+```
+
+Output:
+
+```text
+> auto-order@0.1.0 test
+> vitest run tests/unit/atomic-master-upload-migration.test.ts
+
+RUN  v4.1.10 C:/Users/pcy/Desktop/auto-order/.worktrees/auto-order-mvp
+
+FAIL  tests/unit/atomic-master-upload-migration.test.ts > 0016 atomic master upload migration > revokes broad execute access before granting service role execution
+AssertionError: expected ... to contain:
+revoke execute on function public.replace_product_master(jsonb) from public, anon, authenticated;
+```
+
+This isolated the remaining defect to the missing revoke statements in `0016`.
+
+### Focused verification after fix
+
+Command:
+
+```powershell
+npm.cmd test -- tests/unit/atomic-master-upload-migration.test.ts tests/unit/orders-route.test.ts
+```
+
+Output:
+
+```text
+> auto-order@0.1.0 test
+> vitest run tests/unit/atomic-master-upload-migration.test.ts tests/unit/orders-route.test.ts
+
+RUN  v4.1.10 C:/Users/pcy/Desktop/auto-order/.worktrees/auto-order-mvp
+
+Test Files  2 passed (2)
+     Tests  7 passed (7)
+```
+
+### Focused self-review
+
+- The SQL change is limited to execute permissions in `0016`; no data-mutation logic changed in this follow-up.
+- The migration test now matches the intended non-destructive semantics and the security posture expected by earlier RPC migrations.
