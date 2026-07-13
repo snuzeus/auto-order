@@ -18,6 +18,8 @@ type OrderItemRow = {
   product_name: string;
   spec: string | null;
   supplier_name: string | null;
+  unit_price: number | string | null;
+  minimum_order_quantity: number | null;
   quantity: number | null;
   is_unregistered: boolean | null;
   memo: string | null;
@@ -51,6 +53,12 @@ function mapOrderItem(row: OrderItemRow): OrderItemDraft {
     productName: row.product_name,
     spec: row.spec ?? "",
     supplierName: row.supplier_name?.trim() ? row.supplier_name.trim() : undefined,
+    unitPrice:
+      row.unit_price === null || row.unit_price === undefined ? undefined : Number(row.unit_price),
+    minimumOrderQuantity:
+      row.minimum_order_quantity === null || row.minimum_order_quantity === undefined
+        ? undefined
+        : row.minimum_order_quantity,
     quantity: row.quantity ?? 0,
     isUnregistered: Boolean(row.is_unregistered),
     memo: row.memo ?? undefined,
@@ -108,7 +116,7 @@ export async function GET(request: NextRequest) {
       supabase
         .from("orders")
         .select(
-          "branch_id, status, order_items(product_id, barcode, product_code, product_name, spec, supplier_name, quantity, is_unregistered, memo)",
+          "branch_id, status, order_items(product_id, barcode, product_code, product_name, spec, supplier_name, unit_price, minimum_order_quantity, quantity, is_unregistered, memo)",
         )
         .eq("order_date", parsed.data.orderDate),
       supabase

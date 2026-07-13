@@ -20,6 +20,8 @@ type OrderItemRow = {
   product_name: string;
   spec: string;
   supplier_name: string | null;
+  unit_price: number | string | null;
+  minimum_order_quantity: number | null;
   products?: {
     unit_price: number | string | null;
     minimum_order_quantity: number | null;
@@ -60,7 +62,24 @@ function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
 }
 
+function mapSnapshotNumber(value: number | string | null | undefined): number | undefined {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+
+  return Number(value);
+}
+
 function mapOrderItem(row: OrderItemRow): OrderItemDraft {
+  const unitPrice =
+    row.unit_price === undefined
+      ? mapSnapshotNumber(row.products?.unit_price)
+      : mapSnapshotNumber(row.unit_price);
+  const minimumOrderQuantity =
+    row.minimum_order_quantity === undefined
+      ? row.products?.minimum_order_quantity ?? undefined
+      : row.minimum_order_quantity ?? undefined;
+
   return {
     productId: row.product_id ?? undefined,
     barcode: row.barcode,
@@ -68,15 +87,8 @@ function mapOrderItem(row: OrderItemRow): OrderItemDraft {
     productName: row.product_name,
     spec: row.spec,
     supplierName: row.supplier_name ?? undefined,
-    unitPrice:
-      row.products?.unit_price === null || row.products?.unit_price === undefined
-        ? undefined
-        : Number(row.products.unit_price),
-    minimumOrderQuantity:
-      row.products?.minimum_order_quantity === null ||
-      row.products?.minimum_order_quantity === undefined
-        ? undefined
-        : row.products.minimum_order_quantity,
+    unitPrice,
+    minimumOrderQuantity,
     quantity: row.quantity,
     isUnregistered: row.is_unregistered,
     memo: row.memo ?? undefined,
@@ -183,7 +195,7 @@ export async function GET(request: NextRequest) {
   const { data, error } = await supabase
     .from("orders")
     .select(
-      "id, status, branch_id, order_date, order_items(product_id, barcode, product_code, product_name, spec, supplier_name, quantity, is_unregistered, memo, products(unit_price, minimum_order_quantity))",
+      "id, status, branch_id, order_date, order_items(product_id, barcode, product_code, product_name, spec, supplier_name, unit_price, minimum_order_quantity, quantity, is_unregistered, memo, products(unit_price, minimum_order_quantity))",
     )
     .eq("branch_id", branchId)
     .eq("order_date", orderDate)

@@ -18,15 +18,18 @@ export type Product = {
   isActive: boolean;
 };
 
-export type OrderItemDraft = {
+export type OrderItemProductSnapshot = {
+  unitPrice?: number;
+  minimumOrderQuantity?: number;
+};
+
+export type OrderItemDraft = OrderItemProductSnapshot & {
   productId?: string;
   barcode: string;
   productCode?: string;
   productName: string;
   spec: string;
   supplierName?: string;
-  unitPrice?: number;
-  minimumOrderQuantity?: number;
   quantity: number;
   isUnregistered: boolean;
   memo?: string;
