@@ -6,6 +6,7 @@ export type OrderCleanupResult = {
   cutoffDate: string;
   deletedOrders: number;
   deletedClosingBatches: number;
+  deletedEmailLogs: number;
   error?: string;
 };
 
@@ -30,6 +31,16 @@ export async function cleanupOrdersBeforeYesterday(
 ): Promise<OrderCleanupResult> {
   const cutoffDate = cutoffBeforeYesterdayInSeoul();
 
+  const { data: deletedEmailLogs, error: emailLogsError } = await supabase
+    .from("supplier_email_logs")
+    .delete()
+    .lt("order_date", cutoffDate)
+    .select("id");
+
+  if (emailLogsError) {
+    return { cutoffDate, deletedOrders: 0, deletedClosingBatches: 0, deletedEmailLogs: 0, error: emailLogsError.message };
+  }
+
   const { data: deletedClosingBatches, error: closingBatchesError } = await supabase
     .from("closing_batches")
     .delete()
@@ -41,6 +52,7 @@ export async function cleanupOrdersBeforeYesterday(
       cutoffDate,
       deletedOrders: 0,
       deletedClosingBatches: 0,
+      deletedEmailLogs: deletedEmailLogs?.length ?? 0,
       error: closingBatchesError.message,
     };
   }
@@ -56,6 +68,7 @@ export async function cleanupOrdersBeforeYesterday(
       cutoffDate,
       deletedOrders: 0,
       deletedClosingBatches: deletedClosingBatches?.length ?? 0,
+      deletedEmailLogs: deletedEmailLogs?.length ?? 0,
       error: ordersError.message,
     };
   }
@@ -64,5 +77,6 @@ export async function cleanupOrdersBeforeYesterday(
     cutoffDate,
     deletedOrders: deletedOrders?.length ?? 0,
     deletedClosingBatches: deletedClosingBatches?.length ?? 0,
+    deletedEmailLogs: deletedEmailLogs?.length ?? 0,
   };
 }

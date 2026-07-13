@@ -126,8 +126,7 @@ export function shouldPersistBranchDraft({
 export function buildSubmitBranchOrderItems(
   items: OrderItemDraft[],
 ): SubmitBranchOrderItemRow[] {
-  return items
-    .filter((item) => item.quantity > 0)
+  return getSubmittedBranchOrderItems(items)
     .map((item) => ({
       product_id: item.productId ?? null,
       barcode: item.barcode,
@@ -139,6 +138,16 @@ export function buildSubmitBranchOrderItems(
       is_unregistered: item.isUnregistered,
       memo: item.memo ?? null,
     }));
+}
+
+export function getSubmittedBranchOrderItems(items: OrderItemDraft[]): OrderItemDraft[] {
+  return items.filter((item) => item.quantity > 0);
+}
+
+export function hasInvalidSubmittedRegisteredProduct(items: OrderItemDraft[]): boolean {
+  return getSubmittedBranchOrderItems(items).some(
+    (item) => !item.productId || item.isUnregistered,
+  );
 }
 
 export function hasDraftDifferences(

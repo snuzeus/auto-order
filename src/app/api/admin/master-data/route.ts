@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
-import * as XLSX from "xlsx";
 
 import { requireAdmin } from "@/lib/auth/admin";
 import { normalizeSupplierName } from "@/lib/domain/supplier-name";
@@ -63,6 +62,16 @@ const MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024;
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
+}
+
+function summarizeHeaders(headers: string[]): string {
+  const visibleHeaders = headers.filter(Boolean);
+
+  if (visibleHeaders.length === 0) {
+    return "읽힌 열 없음";
+  }
+
+  return visibleHeaders.slice(0, 20).join(", ");
 }
 
 function getCellText(value: unknown): string {
@@ -163,7 +172,8 @@ function legacyRowsToWorksheet(sheetName: string, rows: SheetRow[]): WorksheetLi
   };
 }
 
-function parseLegacyWorkbook(buffer: Buffer): WorksheetLike | null {
+async function parseLegacyWorkbook(buffer: Buffer): Promise<WorksheetLike | null> {
+  const XLSX = await import("xlsx");
   const workbook = XLSX.read(buffer, {
     type: "buffer",
     cellDates: true,
@@ -191,6 +201,10 @@ function hasAnyValue(row: Record<string, string>): boolean {
 
 function missingHeaders(headers: string[], requiredHeaders: string[]): string[] {
   return requiredHeaders.filter((header) => !headers.includes(header));
+}
+
+function getMissingRowFields(row: Record<string, string>, requiredFields: string[]): string[] {
+  return requiredFields.filter((field) => !row[field]?.trim());
 }
 
 function mapBranch(row: BranchRow) {
@@ -292,7 +306,7 @@ async function readWorkbookFromRequest(request: NextRequest) {
 
   try {
     if (isLegacyExcelFile(file)) {
-      worksheet = parseLegacyWorkbook(buffer);
+      worksheet = await parseLegacyWorkbook(buffer);
     } else {
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.load(
@@ -466,7 +480,15 @@ export async function POST(request: NextRequest) {
   const missing = missingHeaders(headers, requiredHeaders);
 
   if (missing.length > 0) {
-    return jsonError(`필수 헤더가 없습니다: ${missing.join(", ")}`, 400);
+    return jsonError(
+      [
+        `${kind === "branches" ? "지사" : "납품처"} 엑셀 필수 열을 찾지 못했습니다: ${missing.join(", ")}`,
+        `필수 열: ${requiredHeaders.join(", ")}`,
+        `현재 읽힌 열: ${summarizeHeaders(headers)}`,
+        "첫 번째 행에 헤더가 있어야 합니다.",
+      ].join(" / "),
+      400,
+    );
   }
 
   const validationErrors: UploadValidationError[] = [];
@@ -486,7 +508,7 @@ export async function POST(request: NextRequest) {
       email: string;
       updated_at: string;
     }> = [];
-    const seenBusinessNumbers = new Set<string>();
+    const seenBusinessNumbers = new Map<string, number>();
     let totalRows = 0;
     let skippedRows = 0;
 
@@ -504,23 +526,27 @@ export async function POST(request: NextRequest) {
       const name = row["거래처명"]?.trim() ?? "";
       const address = row["주소"]?.trim() ?? "";
 
-      if (!businessNumber || !name || !address) {
+      const missingFields = getMissingRowFields(row, ["사업자등록번호", "거래처명", "주소"]);
+
+      if (missingFields.length > 0) {
         validationErrors.push({
           rowNumber,
-          reason: "사업자등록번호, 거래처명, 주소는 필수입니다.",
+          reason: `필수 값이 비어 있습니다: ${missingFields.join(", ")}. 해당 행의 ${missingFields.join(", ")} 열을 채워 주세요.`,
         });
         continue;
       }
 
-      if (seenBusinessNumbers.has(businessNumber)) {
+      const duplicateRowNumber = seenBusinessNumbers.get(businessNumber);
+
+      if (duplicateRowNumber) {
         validationErrors.push({
           rowNumber,
-          reason: "중복된 사업자등록번호입니다.",
+          reason: `중복된 사업자등록번호입니다. ${duplicateRowNumber}행과 같은 값입니다.`,
         });
         continue;
       }
 
-      seenBusinessNumbers.add(businessNumber);
+      seenBusinessNumbers.set(businessNumber, rowNumber);
       rowsToUpsert.push({
         code: businessNumber,
         name,
@@ -548,51 +574,22 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = createServiceClient();
-    const { error: deactivateError } = await supabase
-      .from("branches")
-      .update({
-        is_active: false,
-        updated_at: now,
-      })
-      .neq("id", "00000000-0000-0000-0000-000000000000");
+    const { data: importedCount, error: replaceError } = await supabase.rpc(
+      "replace_branches_from_upload",
+      {
+        p_branches: rowsToUpsert,
+      },
+    );
 
-    if (deactivateError) {
+    if (replaceError) {
       return jsonError(
-        `지사 엑셀을 저장하지 못했습니다. 기존 지사 비활성화 중 오류가 발생했습니다. (${deactivateError.message})`,
-        500,
+        `지사 엑셀을 저장하지 못했습니다. 지사 코드나 사업자등록번호 중복을 확인해 주세요. (${replaceError.message})`,
+        replaceError.code === "23505" ? 409 : 500,
       );
     }
 
-    for (const row of rowsToUpsert) {
-      const { data: updatedRows, error: updateError } = await supabase
-        .from("branches")
-        .update(row)
-        .eq("business_registration_number", row.business_registration_number)
-        .select("id");
-
-      if (updateError) {
-        return jsonError(
-          `지사 엑셀을 저장하지 못했습니다. 0007_master_data_uploads.sql을 실행했는지 확인해 주세요. (${updateError.message})`,
-          500,
-        );
-      }
-
-      if ((updatedRows ?? []).length > 0) {
-        continue;
-      }
-
-      const { error: insertError } = await supabase.from("branches").insert(row);
-
-      if (insertError) {
-        return jsonError(
-          `지사 엑셀을 저장하지 못했습니다. 지사 코드나 사업자등록번호 중복을 확인해 주세요. (${insertError.message})`,
-          insertError.code === "23505" ? 409 : 500,
-        );
-      }
-    }
-
     return NextResponse.json({
-      importedCount: rowsToUpsert.length,
+      importedCount: typeof importedCount === "number" ? importedCount : rowsToUpsert.length,
       report: {
         sheetName: worksheet.name,
         totalRows,
@@ -613,7 +610,7 @@ export async function POST(request: NextRequest) {
     is_active: true;
     updated_at: string;
   }> = [];
-  const seenBusinessNumbers = new Set<string>();
+  const seenBusinessNumbers = new Map<string, number>();
   let totalRows = 0;
   let skippedRows = 0;
 
@@ -630,23 +627,27 @@ export async function POST(request: NextRequest) {
     const businessNumber = row["사업자등록번호"]?.trim() ?? "";
     const name = normalizeSupplierName(row["거래처명"] ?? "");
 
-    if (!businessNumber || !name) {
+    const missingFields = getMissingRowFields(row, ["사업자등록번호", "거래처명"]);
+
+    if (missingFields.length > 0) {
       validationErrors.push({
         rowNumber,
-        reason: "사업자등록번호와 거래처명은 필수입니다.",
+        reason: `필수 값이 비어 있습니다: ${missingFields.join(", ")}. 해당 행의 ${missingFields.join(", ")} 열을 채워 주세요.`,
       });
       continue;
     }
 
-    if (seenBusinessNumbers.has(businessNumber)) {
+    const duplicateRowNumber = seenBusinessNumbers.get(businessNumber);
+
+    if (duplicateRowNumber) {
       validationErrors.push({
         rowNumber,
-        reason: "중복된 사업자등록번호입니다.",
+        reason: `중복된 사업자등록번호입니다. ${duplicateRowNumber}행과 같은 값입니다.`,
       });
       continue;
     }
 
-    seenBusinessNumbers.add(businessNumber);
+    seenBusinessNumbers.set(businessNumber, rowNumber);
     rowsToUpsert.push({
       business_registration_number: businessNumber,
       name,
@@ -671,31 +672,22 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = createServiceClient();
-  const { error: deleteExistingSuppliersError } = await supabase
-    .from("supplier_directory")
-    .delete()
-    .neq("id", "00000000-0000-0000-0000-000000000000");
+  const { data: importedCount, error: replaceError } = await supabase.rpc(
+    "replace_supplier_directory_from_upload",
+    {
+      p_suppliers: rowsToUpsert,
+    },
+  );
 
-  if (deleteExistingSuppliersError) {
+  if (replaceError) {
     return jsonError(
-      `납품처 엑셀을 저장하지 못했습니다. 기존 납품처 정리 중 오류가 발생했습니다. (${deleteExistingSuppliersError.message})`,
-      500,
-    );
-  }
-
-  const { error: insertSuppliersError } = await supabase
-    .from("supplier_directory")
-    .insert(rowsToUpsert);
-
-  if (insertSuppliersError) {
-    return jsonError(
-      `납품처 엑셀을 저장하지 못했습니다. 엑셀 안의 사업자등록번호나 거래처명 중복을 확인해 주세요. (${insertSuppliersError.message})`,
-      insertSuppliersError.code === "23505" ? 409 : 500,
+      `납품처 엑셀을 저장하지 못했습니다. 엑셀 안의 사업자등록번호나 거래처명 중복을 확인해 주세요. (${replaceError.message})`,
+      replaceError.code === "23505" ? 409 : 500,
     );
   }
 
   return NextResponse.json({
-    importedCount: rowsToUpsert.length,
+    importedCount: typeof importedCount === "number" ? importedCount : rowsToUpsert.length,
     report: {
       sheetName: worksheet.name,
       totalRows,

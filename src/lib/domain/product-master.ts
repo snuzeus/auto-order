@@ -24,7 +24,7 @@ export const PRODUCT_MASTER_HEADERS = [
   "최소발주수량",
 ] as const;
 
-export const REQUIRED_PRODUCT_MASTER_FIELDS = ["상품코드", "상품명"] as const;
+export const REQUIRED_PRODUCT_MASTER_FIELDS = ["상품코드", "상품명", "납품 거래처명", "공급가"] as const;
 
 const HEADER_ALIASES = {
   barcode: ["바코드 번호", "바코드", "상품코드"],
@@ -148,11 +148,10 @@ export function isEmptyProductMasterRow(row: Record<string, unknown>): boolean {
 
 export function getMissingRequiredProductMasterHeaders(headers: string[]): string[] {
   return REQUIRED_PRODUCT_MASTER_FIELDS.filter((field) => {
-    if (field === "상품코드") {
-      return !hasHeader(headers, HEADER_ALIASES.productCode);
-    }
-
-    return !hasHeader(headers, HEADER_ALIASES.name);
+    if (field === "상품코드") return !hasHeader(headers, HEADER_ALIASES.productCode);
+    if (field === "상품명") return !hasHeader(headers, HEADER_ALIASES.name);
+    if (field === "납품 거래처명") return !hasHeader(headers, HEADER_ALIASES.supplierName);
+    return !hasHeader(headers, HEADER_ALIASES.unitPrice);
   });
 }
 
@@ -169,9 +168,10 @@ export function normalizeProductMasterRow(row: Record<string, unknown>): Product
   }
 
   const barcode = readFirstValue(row, HEADER_ALIASES.barcode) || productCode;
-  const supplierName = normalizeSupplierName(
-    readFirstValue(row, HEADER_ALIASES.supplierName) || "납품처 미지정",
-  );
+  const supplierName = normalizeSupplierName(readFirstValue(row, HEADER_ALIASES.supplierName));
+  if (!supplierName) throw new Error("납품 거래처명 값이 없습니다.");
+  const unitPriceValue = readFirstValue(row, HEADER_ALIASES.unitPrice);
+  if (!unitPriceValue) throw new Error("공급가 값이 없습니다.");
 
   return {
     barcode,
@@ -179,7 +179,7 @@ export function normalizeProductMasterRow(row: Record<string, unknown>): Product
     name,
     spec: "",
     supplierName,
-    unitPrice: parseUnitPrice(readFirstValue(row, HEADER_ALIASES.unitPrice)),
+    unitPrice: parseUnitPrice(unitPriceValue),
     minimumOrderQuantity: parseMinimumOrderQuantity(
       readFirstValue(row, HEADER_ALIASES.minimumOrderQuantity),
     ),

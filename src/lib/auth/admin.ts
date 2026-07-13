@@ -16,11 +16,31 @@ type AdminUserRow = {
   id: string;
 };
 
+function isMissingAuthSessionError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const authError = error as { name?: unknown; message?: unknown };
+  const name = typeof authError.name === "string" ? authError.name : "";
+  const message = typeof authError.message === "string" ? authError.message.toLowerCase() : "";
+
+  return name === "AuthSessionMissingError" || message.includes("auth session missing");
+}
+
 export async function requireAdmin(): Promise<RequireAdminResult> {
   const supabase = await createClient();
   const { data, error } = await supabase.auth.getUser();
 
   if (error) {
+    if (isMissingAuthSessionError(error)) {
+      return {
+        ok: false,
+        error: "관리자 로그인이 필요합니다.",
+        status: 401,
+      };
+    }
+
     return {
       ok: false,
       error: "관리자 로그인 정보를 확인하지 못했습니다.",

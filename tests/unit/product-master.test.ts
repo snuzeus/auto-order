@@ -69,17 +69,15 @@ describe("normalizeProductMasterRow", () => {
     });
   });
 
-  it("defaults a blank supplier to an unspecified supplier", () => {
-    expect(
+  it("rejects a blank supplier", () => {
+    expect(() =>
       normalizeProductMasterRow({
         상품코드: "88010001",
         상품명: "생수",
         납품처: "   ",
         계약단가: "1000",
       }),
-    ).toMatchObject({
-      supplierName: "납품처 미지정",
-    });
+    ).toThrowError("납품 거래처명 값이 없습니다.");
   });
 
   it("normalizes the circled company marker in supplier names", () => {
@@ -112,7 +110,7 @@ describe("getMissingRequiredProductMasterHeaders", () => {
     expect(getMissingRequiredProductMasterHeaders(["구분", "상품코드", "상품명", "납품처", "계약단가"])).toEqual([]);
   });
 
-  it("requires product code and product name", () => {
-    expect(getMissingRequiredProductMasterHeaders(["상품코드", "계약단가"])).toEqual(["상품명"]);
+  it("requires product code, name, supplier, and price", () => {
+    expect(getMissingRequiredProductMasterHeaders(["상품코드", "계약단가"])).toEqual(["상품명", "납품 거래처명"]);
   });
 });

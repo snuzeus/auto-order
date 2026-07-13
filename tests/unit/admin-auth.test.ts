@@ -52,6 +52,28 @@ describe("requireAdmin", () => {
     });
   });
 
+  it("returns an auth error when Supabase reports a missing auth session", async () => {
+    createClientMock.mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: null },
+          error: {
+            name: "AuthSessionMissingError",
+            message: "Auth session missing!",
+          },
+        }),
+      },
+    });
+
+    const { requireAdmin } = await import("@/lib/auth/admin");
+
+    await expect(requireAdmin()).resolves.toEqual({
+      ok: false,
+      error: "관리자 로그인이 필요합니다.",
+      status: 401,
+    });
+  });
+
   it("returns a server error when admin permission lookup fails", async () => {
     const maybeSingle = vi.fn().mockResolvedValue({
       data: null,

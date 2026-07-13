@@ -1,16 +1,42 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
 
-const { rpcMock } = vi.hoisted(() => ({
+const {
+  rpcMock,
+  fromMock,
+  selectMock,
+  eqMock,
+  inMock,
+  maybeSingleMock,
+} = vi.hoisted(() => ({
   rpcMock: vi.fn(),
+  fromMock: vi.fn(),
+  selectMock: vi.fn(),
+  eqMock: vi.fn(),
+  inMock: vi.fn(),
+  maybeSingleMock: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/service", () => ({
   createServiceClient: () => ({
+    from: fromMock,
     rpc: rpcMock,
   }),
 }));
 
-import { POST } from "@/app/api/orders/route";
+fromMock.mockImplementation(() => ({
+  select: selectMock,
+}));
+selectMock.mockImplementation(() => ({
+  eq: eqMock,
+  in: inMock,
+}));
+eqMock.mockImplementation(() => ({
+  eq: eqMock,
+  maybeSingle: maybeSingleMock,
+}));
+
+import { GET, POST } from "@/app/api/orders/route";
 
 function createOrderRequest(body: unknown): Request {
   return new Request("http://localhost/api/orders", {
@@ -22,9 +48,65 @@ function createOrderRequest(body: unknown): Request {
   });
 }
 
+function createGetOrderRequest(branchId: string, orderDate: string): NextRequest {
+  return new NextRequest(
+    `http://localhost/api/orders?branchId=${encodeURIComponent(branchId)}&orderDate=${encodeURIComponent(orderDate)}`,
+  );
+}
+
 describe("POST /api/orders", () => {
   afterEach(() => {
     rpcMock.mockReset();
+    fromMock.mockClear();
+    selectMock.mockClear();
+    eqMock.mockClear();
+    inMock.mockReset();
+    maybeSingleMock.mockReset();
+  });
+
+  it("returns stored snapshot pricing when the joined product row is absent", async () => {
+    maybeSingleMock.mockResolvedValue({
+      data: {
+        id: "order-1",
+        status: "draft",
+        branch_id: "550e8400-e29b-41d4-a716-446655440000",
+        order_date: "2026-06-23",
+        order_items: [
+          {
+            product_id: "product-1",
+            barcode: "88010001",
+            product_code: "P-001",
+            product_name: "?앹닔",
+            spec: "500ml",
+            supplier_name: "?섎Ъ?좏넻",
+            unit_price: "1250.00",
+            minimum_order_quantity: 6,
+            products: null,
+            quantity: 2,
+            is_unregistered: false,
+            memo: "snapshot",
+          },
+        ],
+      },
+      error: null,
+    });
+
+    const response = await GET(
+      createGetOrderRequest("550e8400-e29b-41d4-a716-446655440000", "2026-06-23") as never,
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(selectMock).toHaveBeenCalledWith(
+      "id, status, branch_id, order_date, order_items(product_id, barcode, product_code, product_name, spec, supplier_name, unit_price, minimum_order_quantity, quantity, is_unregistered, memo, products(unit_price, minimum_order_quantity))",
+    );
+    expect(body.order.items).toEqual([
+      expect.objectContaining({
+        barcode: "88010001",
+        unitPrice: 1250,
+        minimumOrderQuantity: 6,
+      }),
+    ]);
   });
 
   it("returns 400 without calling the RPC when all items are filtered out", async () => {
@@ -52,7 +134,33 @@ describe("POST /api/orders", () => {
     expect(rpcMock).not.toHaveBeenCalled();
   });
 
-  it("maps closed-date RPC failures to 409 with the Korean user message", async () => {
+  it("returns 400 when a submitted item has no registered product id", async () => {
+    const response = await POST(
+      createOrderRequest({
+        branchId: "550e8400-e29b-41d4-a716-446655440000",
+        orderDate: "2026-06-23",
+        items: [
+          {
+            barcode: "88010001",
+            productCode: "P-001",
+            productName: "생수",
+            spec: "500ml",
+            quantity: 2,
+            isUnregistered: false,
+          },
+        ],
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body).toEqual({
+      error: "등록된 상품만 주문할 수 있습니다.",
+    });
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unregistered item before calling the order RPC", async () => {
     rpcMock.mockResolvedValue({
       data: null,
       error: {
@@ -77,26 +185,53 @@ describe("POST /api/orders", () => {
     );
     const body = await response.json();
 
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(400);
     expect(body).toEqual({
-      error: "마감된 주문 날짜는 제출하거나 수정할 수 없습니다.",
+      error: "등록된 상품만 주문할 수 있습니다.",
     });
-    expect(rpcMock).toHaveBeenCalledWith("submit_branch_order", {
-      p_branch_id: "550e8400-e29b-41d4-a716-446655440000",
-      p_order_date: "2026-06-23",
-      p_items: [
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  it("maps product-mismatch RPC failures to 400 with the registered-product message", async () => {
+    inMock.mockResolvedValue({
+      data: [
         {
-          product_id: null,
-          barcode: "88010001",
-          product_code: null,
-          product_name: "생수",
-          spec: "500ml",
-          supplier_name: null,
-          quantity: 2,
-          is_unregistered: false,
-          memo: null,
+          id: "550e8400-e29b-41d4-a716-446655440001",
+          name: "생수",
+          minimum_order_quantity: 1,
         },
       ],
+      error: null,
+    });
+    rpcMock.mockResolvedValue({
+      data: null,
+      error: {
+        message: "PRODUCT_MISMATCH",
+      },
+    });
+
+    const response = await POST(
+      createOrderRequest({
+        branchId: "550e8400-e29b-41d4-a716-446655440000",
+        orderDate: "2026-06-23",
+        items: [
+          {
+            productId: "550e8400-e29b-41d4-a716-446655440001",
+            barcode: "88010001",
+            productCode: "P-001",
+            productName: "생수",
+            spec: "500ml",
+            quantity: 2,
+            isUnregistered: false,
+          },
+        ],
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body).toEqual({
+      error: "등록된 상품만 주문할 수 있습니다.",
     });
   });
 });

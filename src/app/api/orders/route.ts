@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { buildSubmitBranchOrderItems } from "@/lib/domain/branch-order-draft";
+import {
+  buildSubmitBranchOrderItems,
+  getSubmittedBranchOrderItems,
+  hasInvalidSubmittedRegisteredProduct,
+} from "@/lib/domain/branch-order-draft";
 import { submitOrderSchema } from "@/lib/schemas";
 import { createServiceClient } from "@/lib/supabase/service";
 import type { OrderItemDraft, OrderStatus } from "@/lib/types";
@@ -20,6 +24,8 @@ type OrderItemRow = {
   product_name: string;
   spec: string;
   supplier_name: string | null;
+  unit_price: number | string | null;
+  minimum_order_quantity: number | null;
   products?: {
     unit_price: number | string | null;
     minimum_order_quantity: number | null;
@@ -41,6 +47,8 @@ const ORDER_ERROR_MESSAGES = {
   invalidInput: "주문 입력값이 올바르지 않습니다.",
   invalidItems: "주문 항목 형식이 올바르지 않습니다.",
   emptySubmittedItems: "수량이 0보다 큰 주문 항목을 하나 이상 입력해 주세요.",
+  registeredProductRequired: "등록된 상품만 주문할 수 있습니다.",
+  minimumOrderQuantityNotMet: "최소발주수량보다 적게 주문한 상품이 있습니다.",
   branchNotFound: "선택한 지점을 찾을 수 없습니다.",
   closedDate: "마감된 주문 날짜는 제출하거나 수정할 수 없습니다.",
   loadFailed: "주문 정보를 불러오지 못했습니다.",
@@ -54,13 +62,33 @@ const ORDER_RPC_ERRORS = {
   closedDate: "ORDER_DATE_CLOSED",
   emptySubmittedItems: "ORDER_ITEMS_EMPTY",
   invalidItems: "ORDER_ITEMS_INVALID",
+  registeredProductRequired: "REGISTERED_PRODUCT_REQUIRED",
+  productMismatch: "PRODUCT_MISMATCH",
+  minimumOrderQuantityNotMet: "MINIMUM_ORDER_QUANTITY_NOT_MET",
 } as const;
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
 }
 
+function mapSnapshotNumber(value: number | string | null | undefined): number | undefined {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+
+  return Number(value);
+}
+
 function mapOrderItem(row: OrderItemRow): OrderItemDraft {
+  const unitPrice =
+    row.unit_price === undefined
+      ? mapSnapshotNumber(row.products?.unit_price)
+      : mapSnapshotNumber(row.unit_price);
+  const minimumOrderQuantity =
+    row.minimum_order_quantity === undefined
+      ? row.products?.minimum_order_quantity ?? undefined
+      : row.minimum_order_quantity ?? undefined;
+
   return {
     productId: row.product_id ?? undefined,
     barcode: row.barcode,
@@ -68,15 +96,8 @@ function mapOrderItem(row: OrderItemRow): OrderItemDraft {
     productName: row.product_name,
     spec: row.spec,
     supplierName: row.supplier_name ?? undefined,
-    unitPrice:
-      row.products?.unit_price === null || row.products?.unit_price === undefined
-        ? undefined
-        : Number(row.products.unit_price),
-    minimumOrderQuantity:
-      row.products?.minimum_order_quantity === null ||
-      row.products?.minimum_order_quantity === undefined
-        ? undefined
-        : row.products.minimum_order_quantity,
+    unitPrice,
+    minimumOrderQuantity,
     quantity: row.quantity,
     isUnregistered: row.is_unregistered,
     memo: row.memo ?? undefined,
@@ -115,6 +136,23 @@ function mapOrderRpcError(message: string | undefined): {
     };
   }
 
+  if (
+    message.includes(ORDER_RPC_ERRORS.registeredProductRequired) ||
+    message.includes(ORDER_RPC_ERRORS.productMismatch)
+  ) {
+    return {
+      message: ORDER_ERROR_MESSAGES.registeredProductRequired,
+      status: 400,
+    };
+  }
+
+  if (message.includes(ORDER_RPC_ERRORS.minimumOrderQuantityNotMet)) {
+    return {
+      message: ORDER_ERROR_MESSAGES.minimumOrderQuantityNotMet,
+      status: 400,
+    };
+  }
+
   if (message.includes(ORDER_RPC_ERRORS.emptySubmittedItems)) {
     return {
       message: ORDER_ERROR_MESSAGES.emptySubmittedItems,
@@ -131,33 +169,52 @@ function mapOrderRpcError(message: string | undefined): {
 async function validateMinimumOrderQuantities(
   supabase: ReturnType<typeof createServiceClient>,
   items: OrderItemDraft[],
-): Promise<{ ok: true } | { ok: false; message: string }> {
+): Promise<{ ok: true; items: OrderItemDraft[] } | { ok: false; message: string }> {
   const submittedItems = items.filter((item) => item.quantity > 0 && item.productId);
   const productIds = Array.from(new Set(submittedItems.map((item) => item.productId as string)));
 
   if (productIds.length === 0) {
-    return { ok: true };
+    return { ok: true, items: [] };
   }
 
   const { data, error } = await supabase
     .from("products")
-    .select("id, name, minimum_order_quantity")
+    .select("id, barcode, product_code, name, spec, supplier_name, unit_price, minimum_order_quantity, is_active")
     .in("id", productIds);
 
   if (error) {
     return { ok: false, message: ORDER_ERROR_MESSAGES.saveFailed };
   }
 
-  const productsById = new Map(
-    ((data ?? []) as Array<{
+  const productsById = new Map<string, {
       id: string;
+      barcode: string;
+      product_code: string;
       name: string;
+      spec: string;
+      supplier_name: string;
+      unit_price: number | string;
       minimum_order_quantity: number | null;
-    }>).map((product) => [product.id, product]),
-  );
+      is_active: boolean;
+    }>(((data ?? []) as Array<{
+      id: string;
+      barcode: string;
+      product_code: string;
+      name: string;
+      spec: string;
+      supplier_name: string;
+      unit_price: number | string;
+      minimum_order_quantity: number | null;
+      is_active: boolean;
+    }>).map((product) => [product.id, product]));
+
+  const trustedItems: OrderItemDraft[] = [];
 
   for (const item of submittedItems) {
     const product = productsById.get(item.productId as string);
+    if (!product || !product.is_active || product.barcode !== item.barcode || product.product_code !== item.productCode) {
+      return { ok: false, message: ORDER_ERROR_MESSAGES.registeredProductRequired };
+    }
     const minimumOrderQuantity = product?.minimum_order_quantity ?? null;
 
     if (minimumOrderQuantity && item.quantity < minimumOrderQuantity) {
@@ -166,9 +223,21 @@ async function validateMinimumOrderQuantities(
         message: `${product?.name ?? item.productName} 최소발주수량은 ${minimumOrderQuantity}개입니다.`,
       };
     }
+
+    trustedItems.push({
+      ...item,
+      barcode: product.barcode,
+      productCode: product.product_code,
+      productName: product.name,
+      spec: product.spec,
+      supplierName: product.supplier_name,
+      unitPrice: Number(product.unit_price),
+      minimumOrderQuantity: product.minimum_order_quantity ?? undefined,
+      isUnregistered: false,
+    });
   }
 
-  return { ok: true };
+  return { ok: true, items: trustedItems };
 }
 
 export async function GET(request: NextRequest) {
@@ -183,7 +252,7 @@ export async function GET(request: NextRequest) {
   const { data, error } = await supabase
     .from("orders")
     .select(
-      "id, status, branch_id, order_date, order_items(product_id, barcode, product_code, product_name, spec, supplier_name, quantity, is_unregistered, memo, products(unit_price, minimum_order_quantity))",
+      "id, status, branch_id, order_date, order_items(product_id, barcode, product_code, product_name, spec, supplier_name, unit_price, minimum_order_quantity, quantity, is_unregistered, memo, products(unit_price, minimum_order_quantity))",
     )
     .eq("branch_id", branchId)
     .eq("order_date", orderDate)
@@ -224,20 +293,24 @@ export async function POST(request: Request) {
   }
 
   const { branchId, orderDate, items } = parsed.data;
-  const submittedItems = items.filter((item) => item.quantity > 0);
+  const submittedItems = getSubmittedBranchOrderItems(items);
 
   if (submittedItems.length === 0) {
     return jsonError(ORDER_ERROR_MESSAGES.emptySubmittedItems, 400);
   }
 
+  if (hasInvalidSubmittedRegisteredProduct(items)) {
+    return jsonError(ORDER_ERROR_MESSAGES.registeredProductRequired, 400);
+  }
+
   const supabase = createServiceClient();
-  const minimumQuantityValidation = await validateMinimumOrderQuantities(supabase, items);
+  const minimumQuantityValidation = await validateMinimumOrderQuantities(supabase, submittedItems);
 
   if (!minimumQuantityValidation.ok) {
     return jsonError(minimumQuantityValidation.message, 400);
   }
 
-  const rpcItems = buildSubmitBranchOrderItems(items);
+  const rpcItems = buildSubmitBranchOrderItems(minimumQuantityValidation.items);
   const { data, error } = await supabase.rpc("submit_branch_order", {
     p_branch_id: branchId,
     p_order_date: orderDate,
@@ -262,7 +335,7 @@ export async function POST(request: Request) {
       status: savedOrder.status,
       branchId: savedOrder.branch_id,
       orderDate: savedOrder.order_date,
-      items: submittedItems,
+      items: minimumQuantityValidation.items,
     },
   });
 }

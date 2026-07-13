@@ -113,7 +113,7 @@ export default function MasterDataPanel() {
         <div>
           <h2 className="m-0 text-xl font-bold sm:text-2xl">지사/납품처 엑셀 관리</h2>
           <p className="mt-1 text-sm text-slate-600">
-            전국지사현황.xlsx와 납품업체리스트.xlsx 파일로만 추가/수정합니다.
+            전국지사현황, 납품업체리스트 엑셀 파일(.xlsx, .xlsm, .xls)로 교체 반영합니다.
           </p>
         </div>
         <span className="text-sm font-bold text-slate-600">{isOpen ? "접기" : "열기"}</span>
@@ -151,7 +151,7 @@ export default function MasterDataPanel() {
             >
               <h3 className="m-0 text-lg font-bold">지사 엑셀 업로드</h3>
               <p className="mt-1 text-sm text-slate-700">
-                전국지사현황.xlsx 형식으로 지사를 추가하거나 수정합니다.
+                전국지사현황 엑셀 형식(.xlsx, .xlsm, .xls)으로 전체 지사 목록을 교체합니다.
               </p>
               <label className="mt-3 block text-sm font-semibold text-slate-700">
                 전국지사현황 파일
@@ -189,7 +189,7 @@ export default function MasterDataPanel() {
             >
               <h3 className="m-0 text-lg font-bold">납품처 엑셀 업로드</h3>
               <p className="mt-1 text-sm text-slate-700">
-                납품업체리스트.xlsx 형식으로 납품처를 추가하거나 수정합니다.
+                납품업체리스트 엑셀 형식(.xlsx, .xlsm, .xls)으로 전체 납품처 목록을 교체합니다.
               </p>
               <label className="mt-3 block text-sm font-semibold text-slate-700">
                 납품업체리스트 파일

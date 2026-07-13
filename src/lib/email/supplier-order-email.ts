@@ -271,7 +271,7 @@ export async function sendSupplierOrderEmails(
     }
   }
 
-  let sendIndex = 0;
+  let attemptedSendCount = 0;
 
   for (const [supplierName, supplierRows] of groupedRows) {
     const email = emailBySupplier.get(normalizeSupplierName(supplierName)) ?? "";
@@ -292,9 +292,11 @@ export async function sendSupplierOrderEmails(
     }
 
     try {
-      if (sendIndex > 0) {
+      if (attemptedSendCount > 0) {
         await sleep(RESEND_SEND_INTERVAL_MS);
       }
+
+      attemptedSendCount += 1;
 
       const workbook = await createSupplierWorkbook(supplierRows);
       const providerMessageId = await sendResendEmail({
@@ -312,7 +314,6 @@ export async function sendSupplierOrderEmails(
         status: "sent",
         provider_message_id: providerMessageId,
       });
-      sendIndex += 1;
       result.sent += 1;
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Email delivery failed.";
