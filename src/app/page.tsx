@@ -32,7 +32,7 @@ export default function HomePage() {
               textTransform: "uppercase",
             }}
           >
-            Auto Order
+            N&H CORP
           </p>
           <h1
             style={{
@@ -42,7 +42,7 @@ export default function HomePage() {
               lineHeight: 1.1,
             }}
           >
-            Auto Order
+            N&H CORP
           </h1>
           <p
             style={{
@@ -101,6 +101,17 @@ export default function HomePage() {
             본사 관리자
           </Link>
         </div>
+
+        <p
+          style={{
+            margin: "auto 0 0",
+            color: "#64748b",
+            fontSize: "0.875rem",
+            textAlign: "right",
+          }}
+        >
+          made by PCY
+        </p>
       </div>
     </main>
   );

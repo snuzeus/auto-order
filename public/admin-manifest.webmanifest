@@ -1,6 +1,6 @@
 {
-  "name": "Auto Order Admin",
-  "short_name": "OrderAdmin",
+  "name": "N&H CORP 관리자",
+  "short_name": "N&H CORP",
   "lang": "ko",
   "start_url": "/admin",
   "scope": "/admin",
