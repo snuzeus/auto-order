@@ -62,6 +62,11 @@ export const closingModeSchema = z.object({
   mode: z.enum(["manual", "auto_14"]),
 });
 
+export const supplierEmailRetrySchema = z.object({
+  orderDate: ymdDateSchema,
+  supplierName: requiredTrimmedText("supplierName"),
+});
+
 export const adminBranchUpdateSchema = z.object({
   type: z.literal("branch"),
   id: z.string().uuid(),

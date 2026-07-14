@@ -5,6 +5,7 @@ import {
   getSubmittedBranchOrderItems,
   hasInvalidSubmittedRegisteredProduct,
 } from "@/lib/domain/branch-order-draft";
+import { isTodayInSeoul } from "@/lib/domain/order-date";
 import { submitOrderSchema } from "@/lib/schemas";
 import { createServiceClient } from "@/lib/supabase/service";
 import type { OrderItemDraft, OrderStatus } from "@/lib/types";
@@ -293,6 +294,10 @@ export async function POST(request: Request) {
   }
 
   const { branchId, orderDate, items } = parsed.data;
+
+  if (!isTodayInSeoul(orderDate)) {
+    return jsonError("지사 주문은 오늘 날짜에만 제출할 수 있습니다.", 400);
+  }
   const submittedItems = getSubmittedBranchOrderItems(items);
 
   if (submittedItems.length === 0) {

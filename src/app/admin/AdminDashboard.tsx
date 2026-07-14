@@ -145,6 +145,7 @@ export default function AdminDashboard() {
   const [notice, setNotice] = useState("");
   const [actionMode, setActionMode] = useState<"none" | "close" | "cancel">("none");
   const [actionPending, setActionPending] = useState(false);
+  const [retryPendingSupplier, setRetryPendingSupplier] = useState("");
   const [closingMode, setClosingMode] = useState<ClosingMode>("manual");
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [settingsPending, setSettingsPending] = useState(false);
@@ -367,6 +368,43 @@ export default function AdminDashboard() {
       setError(actionError instanceof Error ? actionError.message : "요청을 처리하지 못했습니다.");
     } finally {
       setActionPending(false);
+    }
+  }
+
+  async function retryFailedEmail(supplierName: string) {
+    if (retryPendingSupplier || !status) {
+      return;
+    }
+
+    setRetryPendingSupplier(supplierName);
+    setError("");
+    setNotice("");
+
+    try {
+      const response = await fetch("/api/admin/email-retry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderDate, supplierName }),
+      });
+      const data = (await response.json()) as {
+        error?: string;
+        emailResult?: { sent: number; failed: Array<unknown> };
+      };
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "메일 재발송에 실패했습니다.");
+      }
+
+      setNotice(
+        data.emailResult?.sent
+          ? `${supplierName} 메일을 재발송했습니다.`
+          : `${supplierName} 메일 재발송에 실패했습니다.`,
+      );
+      await loadStatus();
+    } catch (retryError) {
+      setError(retryError instanceof Error ? retryError.message : "메일 재발송에 실패했습니다.");
+    } finally {
+      setRetryPendingSupplier("");
     }
   }
 
@@ -776,17 +814,29 @@ export default function AdminDashboard() {
                         </p>
                         {log.reason ? <p className="m-0 mt-1 text-red-700">{log.reason}</p> : null}
                       </div>
-                      <span
-                        className={`inline-flex min-h-8 items-center justify-center rounded-full px-3 text-xs font-bold ${
-                          log.status === "sent"
-                            ? "bg-teal-100 text-teal-900"
-                            : log.status === "skipped"
-                              ? "bg-amber-100 text-amber-900"
-                              : "bg-red-100 text-red-800"
-                        }`}
-                      >
-                        {log.status === "sent" ? "발송" : log.status === "skipped" ? "제외" : "실패"}
-                      </span>
+                      <div className="flex items-center justify-end gap-2">
+                        <span
+                          className={`inline-flex min-h-8 items-center justify-center rounded-full px-3 text-xs font-bold ${
+                            log.status === "sent"
+                              ? "bg-teal-100 text-teal-900"
+                              : log.status === "skipped"
+                                ? "bg-amber-100 text-amber-900"
+                                : "bg-red-100 text-red-800"
+                          }`}
+                        >
+                          {log.status === "sent" ? "발송" : log.status === "skipped" ? "제외" : "실패"}
+                        </span>
+                        {log.status === "failed" ? (
+                          <button
+                            className={`min-h-8 border border-slate-300 bg-white px-3 text-xs font-bold text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100 ${FOCUS_VISIBLE_CLASS}`}
+                            disabled={Boolean(retryPendingSupplier)}
+                            onClick={() => retryFailedEmail(log.supplier_name)}
+                            type="button"
+                          >
+                            {retryPendingSupplier === log.supplier_name ? "재발송 중" : "재발송"}
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
                   ))}
                 </div>

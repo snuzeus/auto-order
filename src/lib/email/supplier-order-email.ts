@@ -39,6 +39,10 @@ export type SupplierEmailResult = {
   failed: Array<{ supplierName: string; email: string; reason: string }>;
 };
 
+type SupplierEmailOptions = {
+  supplierName?: string;
+};
+
 function groupRowsBySupplier(rows: SupplierExcelRow[]): Map<string, SupplierExcelRow[]> {
   return rows.reduce((grouped, row) => {
     const supplierRows = grouped.get(row.supplierName) ?? [];
@@ -173,6 +177,7 @@ async function logSupplierEmail(
 export async function sendSupplierOrderEmails(
   supabase: SupabaseClient,
   orderDate: string,
+  options: SupplierEmailOptions = {},
 ): Promise<SupplierEmailResult> {
   const result: SupplierEmailResult = {
     sent: 0,
@@ -222,6 +227,17 @@ export async function sendSupplierOrderEmails(
 
   const rows = mapSupplierRows((orders ?? []) as ClosedOrderRow[]);
   const groupedRows = groupRowsBySupplier(rows);
+  const targetSupplierName = options.supplierName
+    ? normalizeSupplierName(options.supplierName)
+    : "";
+
+  if (targetSupplierName) {
+    for (const supplierName of groupedRows.keys()) {
+      if (normalizeSupplierName(supplierName) !== targetSupplierName) {
+        groupedRows.delete(supplierName);
+      }
+    }
+  }
 
   if (groupedRows.size === 0) {
     await logSupplierEmail(supabase, {

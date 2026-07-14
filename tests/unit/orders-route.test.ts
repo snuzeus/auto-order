@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const {
@@ -55,7 +55,13 @@ function createGetOrderRequest(branchId: string, orderDate: string): NextRequest
 }
 
 describe("POST /api/orders", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-14T09:00:00+09:00"));
+  });
+
   afterEach(() => {
+    vi.useRealTimers();
     rpcMock.mockReset();
     fromMock.mockClear();
     selectMock.mockClear();
@@ -113,7 +119,7 @@ describe("POST /api/orders", () => {
     const response = await POST(
       createOrderRequest({
         branchId: "550e8400-e29b-41d4-a716-446655440000",
-        orderDate: "2026-06-23",
+        orderDate: "2026-07-14",
         items: [
           {
             barcode: "88010001",
@@ -138,7 +144,7 @@ describe("POST /api/orders", () => {
     const response = await POST(
       createOrderRequest({
         branchId: "550e8400-e29b-41d4-a716-446655440000",
-        orderDate: "2026-06-23",
+        orderDate: "2026-07-14",
         items: [
           {
             barcode: "88010001",
@@ -171,7 +177,7 @@ describe("POST /api/orders", () => {
     const response = await POST(
       createOrderRequest({
         branchId: "550e8400-e29b-41d4-a716-446655440000",
-        orderDate: "2026-06-23",
+        orderDate: "2026-07-14",
         items: [
           {
             barcode: "88010001",
@@ -213,7 +219,7 @@ describe("POST /api/orders", () => {
     const response = await POST(
       createOrderRequest({
         branchId: "550e8400-e29b-41d4-a716-446655440000",
-        orderDate: "2026-06-23",
+        orderDate: "2026-07-14",
         items: [
           {
             productId: "550e8400-e29b-41d4-a716-446655440001",
