@@ -109,7 +109,17 @@ export async function GET(request: NextRequest) {
     closingBatchId,
   });
 
-  const emailResult = await sendSupplierOrderEmails(supabase, orderDate);
+  if (!closingBatchId) {
+    logAutoClose("missing_closing_batch_id", { orderDate });
+    return NextResponse.json({
+      skipped: true,
+      orderDate,
+      reason: "마감 처리 결과를 확인하지 못했습니다.",
+      cleanupResult,
+    });
+  }
+
+  const emailResult = await sendSupplierOrderEmails(supabase, closingBatchId, orderDate);
   logAutoClose("email_result", emailResult);
 
   return NextResponse.json({

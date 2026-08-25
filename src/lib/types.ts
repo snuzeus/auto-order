@@ -33,6 +33,7 @@ export type OrderItemDraft = OrderItemProductSnapshot & {
   quantity: number;
   isUnregistered: boolean;
   memo?: string;
+  orderDate?: string;
 };
 
 export type OrderTotals = {

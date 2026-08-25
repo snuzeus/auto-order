@@ -15,6 +15,7 @@ const sampleRows: SupplierExcelRow[] = [
     branchName: "강남점",
     address: "서울 강남구",
     phone: "010-1111-2222",
+    orderDate: "2026-08-17",
     productCode: "P1",
     productName: "물티슈",
     spec: "100매",
@@ -25,6 +26,7 @@ const sampleRows: SupplierExcelRow[] = [
     branchName: "부산점",
     address: "부산 해운대구",
     phone: "010-3333-4444",
+    orderDate: "2026-08-18",
     productCode: "P2",
     productName: "장갑",
     spec: "L",
@@ -35,6 +37,7 @@ const sampleRows: SupplierExcelRow[] = [
     branchName: "대구점",
     address: "대구 수성구",
     phone: "010-5555-6666",
+    orderDate: "2026-08-18",
     productCode: "P3",
     productName: "컵",
     spec: "20oz",
@@ -79,6 +82,46 @@ describe("createSupplierWorkbook", () => {
       "P1",
       "물티슈",
       2,
+    ]);
+  });
+
+  it("combines the same branch and product across order dates", async () => {
+    const workbookBuffer = await createSupplierWorkbook([
+      sampleRows[0],
+      { ...sampleRows[0], orderDate: "2026-08-18", quantity: 5 },
+      {
+        ...sampleRows[0],
+        orderDate: "2026-08-18",
+        branchName: "서초점",
+        address: "서울 서초구",
+        phone: "010-9999-8888",
+        quantity: 4,
+      },
+    ]);
+    const workbook = new ExcelJS.Workbook();
+
+    await workbook.xlsx.load(workbookBuffer);
+
+    const worksheet = workbook.getWorksheet("발주서");
+
+    expect(worksheet?.rowCount).toBe(3);
+    expect(worksheet?.getRow(2).values).toEqual([
+      ,
+      "강남점",
+      "서울 강남구",
+      "010-1111-2222",
+      "P1",
+      "물티슈",
+      7,
+    ]);
+    expect(worksheet?.getRow(3).values).toEqual([
+      ,
+      "서초점",
+      "서울 서초구",
+      "010-9999-8888",
+      "P1",
+      "물티슈",
+      4,
     ]);
   });
 });

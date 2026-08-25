@@ -8,6 +8,12 @@ import MasterDataPanel from "./MasterDataPanel";
 
 type AdminStatus = {
   orderDate: string;
+  closingBatchId: string | null;
+  closingDate: string | null;
+  includedFromDate: string | null;
+  includedToDate: string | null;
+  orderDateCount: number;
+  orderCount: number;
   branchStatuses: Array<{
     branchId: string;
     branchName: string;
@@ -23,6 +29,7 @@ type AdminStatus = {
       quantity: number;
       isUnregistered: boolean;
       memo?: string;
+      orderDate?: string;
     }>;
   }>;
   summary: {
@@ -162,8 +169,8 @@ export default function AdminDashboard() {
   const todayDate = useMemo(() => todayYmd(), []);
   const yesterdayDate = useMemo(() => yesterdayYmd(), []);
   const [orderDate, setOrderDate] = useState(todayDate);
-  const isClosedDay = status?.branchStatuses.some((branch) => branch.status === "closed") ?? false;
-  const hasSummaryData = (status?.summary.totalItemCount ?? 0) > 0;
+  const isClosedDay = Boolean(status?.closingBatchId);
+  const hasSummaryData = (status?.orderCount ?? 0) > 0;
   const isManualClosingMode = closingMode === "manual";
   const canStartClose =
     Boolean(status) &&
@@ -175,7 +182,8 @@ export default function AdminDashboard() {
     isManualClosingMode;
   const canStartCancel = Boolean(status) && !loading && !actionPending && isClosedDay;
   const canDownloadZip = Boolean(status) && !loading && isClosedDay;
-  const downloadHref = `/api/admin/excel?date=${encodeURIComponent(orderDate)}`;
+  const batchActionDate = status?.closingDate ?? orderDate;
+  const downloadHref = `/api/admin/excel?date=${encodeURIComponent(batchActionDate)}`;
 
   const loadClosingSettings = useCallback(async (signal?: AbortSignal) => {
     setSettingsLoading(true);
@@ -230,6 +238,12 @@ export default function AdminDashboard() {
 
       setStatus({
         orderDate: data.orderDate,
+        closingBatchId: data.closingBatchId ?? null,
+        closingDate: data.closingDate ?? null,
+        includedFromDate: data.includedFromDate ?? null,
+        includedToDate: data.includedToDate ?? null,
+        orderDateCount: data.orderDateCount ?? 0,
+        orderCount: data.orderCount ?? 0,
         branchStatuses: data.branchStatuses ?? [],
         summary: data.summary,
         emailLogs: data.emailLogs ?? [],
@@ -325,7 +339,9 @@ export default function AdminDashboard() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ orderDate }),
+        body: JSON.stringify({
+          orderDate: endpoint === "/api/admin/cancel-close" ? batchActionDate : orderDate,
+        }),
       });
       const data = (await response.json()) as {
         error?: string;
@@ -359,8 +375,8 @@ export default function AdminDashboard() {
 
       setNotice(
         endpoint === "/api/admin/close"
-          ? `마감 처리가 완료되었습니다.${emailSummary}`
-          : "마감 취소가 완료되었습니다.",
+          ? `${status?.includedFromDate ?? orderDate} ~ ${status?.includedToDate ?? orderDate} 누적 주문서 ${status?.orderCount ?? 0}건의 마감 처리가 완료되었습니다.${emailSummary}`
+          : "해당 마감 묶음의 누적 주문이 모두 제출 상태로 복구되었습니다.",
       );
       setActionMode("none");
       await loadStatus();
@@ -384,7 +400,7 @@ export default function AdminDashboard() {
       const response = await fetch("/api/admin/email-retry", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderDate, supplierName }),
+        body: JSON.stringify({ orderDate: batchActionDate, supplierName }),
       });
       const data = (await response.json()) as {
         error?: string;
@@ -577,7 +593,7 @@ export default function AdminDashboard() {
           {isClosingPanelOpen ? (
             <div className="mt-4 rounded-lg border border-slate-200 bg-white px-3 py-3">
               <p className="m-0 text-sm text-slate-600">
-                자동 마감은 매일 오후 2시 기준으로 실행되고, 수동 마감은 관리자가 직접 마감합니다.
+                자동 마감은 당일 주문만 처리하고, 수동 마감은 기준일까지 쌓인 미마감 주문을 누적 처리합니다.
               </p>
               {settingsLoading ? (
                 <p className="mt-2 text-sm text-slate-600">설정을 불러오는 중입니다.</p>
@@ -612,7 +628,7 @@ export default function AdminDashboard() {
             >
               <span className="block text-lg font-bold">수동 마감</span>
               <span className="mt-2 block text-sm">
-                관리자가 확인 후 직접 마감 버튼을 눌러 마감합니다.
+                관리자가 확인 후 마감 버튼을 누르면 기준일까지 제출된 미마감 주문이 모두 함께 마감됩니다.
               </span>
             </button>
               </div>
@@ -701,6 +717,21 @@ export default function AdminDashboard() {
 
         {!loading && status ? (
           <>
+            <section className="rounded-lg border border-teal-200 bg-teal-50 p-4 shadow-sm sm:p-5">
+              <h2 className="m-0 text-xl font-bold text-teal-950">수동 누적 마감 대상</h2>
+              <p className="mt-3 text-lg font-bold text-teal-950">
+                {status.includedFromDate && status.includedToDate
+                  ? `${status.includedFromDate} ~ ${status.includedToDate}`
+                  : "마감 대기 주문 없음"}
+              </p>
+              <p className="mt-2 text-sm text-teal-900">
+                누적 주문일 {status.orderDateCount}일 · 주문서 {status.orderCount}건
+              </p>
+              <p className="mt-2 text-sm text-teal-900">
+                수동 마감 시 기준일까지 제출되고 아직 마감되지 않은 주문을 모두 한 번에 마감하고 발송합니다.
+              </p>
+            </section>
+
             <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-4">
               <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                 <p className="m-0 text-sm text-slate-600">제출 지점</p>
@@ -845,10 +876,16 @@ export default function AdminDashboard() {
 
             {actionMode === "close" ? (
               <div className="rounded-lg border border-red-200 bg-white p-5 shadow-sm">
-                <h2 className="m-0 text-2xl font-bold text-red-800">오늘 주문 마감 전 확인</h2>
+                <h2 className="m-0 text-2xl font-bold text-red-800">누적 주문 마감 전 확인</h2>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   <p className="m-0 rounded-lg bg-slate-50 px-4 py-3 text-base">
-                    조회일 <strong>{status.orderDate}</strong>
+                    포함 기간{" "}
+                    <strong>
+                      {status.includedFromDate ?? status.orderDate} ~ {status.includedToDate ?? status.orderDate}
+                    </strong>
+                  </p>
+                  <p className="m-0 rounded-lg bg-slate-50 px-4 py-3 text-base">
+                    주문서 <strong>{status.orderCount}건</strong>
                   </p>
                   <p className="m-0 rounded-lg bg-slate-50 px-4 py-3 text-base">
                     미제출 지점 수 <strong>{status.summary.unsubmittedBranchNames.length}</strong>
@@ -896,7 +933,7 @@ export default function AdminDashboard() {
               <div className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm">
                 <h2 className="m-0 text-2xl font-bold">마감 취소 확인</h2>
                 <p className="mt-4 text-base text-slate-700">
-                  {status.orderDate} 마감을 취소하면 지점 주문이 다시 제출 상태로 돌아갑니다.
+                  {status.includedFromDate ?? status.orderDate} ~ {status.includedToDate ?? status.orderDate} 마감 묶음을 취소하면 포함된 모든 주문이 다시 제출 상태로 돌아갑니다.
                 </p>
                 <div className="mt-4 flex flex-col gap-3 sm:flex-row">
                   <button
@@ -979,11 +1016,16 @@ export default function AdminDashboard() {
                               <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
                                 {branch.items.map((item) => (
                                   <div
-                                    key={`${branch.branchId}-${item.barcode}-${item.productName}`}
+                                    key={`${branch.branchId}-${item.orderDate ?? orderDate}-${item.barcode}-${item.productName}`}
                                     className="grid gap-2 border-b border-slate-200 px-4 py-4 last:border-b-0 md:grid-cols-[minmax(0,2fr)_1fr_auto]"
                                   >
                                     <div>
                                      <p className="m-0 text-base font-semibold">{item.productName}</p>
+                                     {item.orderDate ? (
+                                       <p className="mt-1 text-sm font-semibold text-slate-700">
+                                         주문일: {item.orderDate}
+                                       </p>
+                                     ) : null}
                                      <p className="mt-1 text-sm text-slate-600">
                                         등록 상품
                                      </p>

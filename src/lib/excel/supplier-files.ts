@@ -3,6 +3,7 @@ import JSZip from "jszip";
 
 export type SupplierExcelRow = {
   supplierName: string;
+  orderDate: string;
   branchName: string;
   address: string;
   phone: string;
@@ -35,6 +36,32 @@ export function groupRowsBySupplier(rows: SupplierExcelRow[]): Map<string, Suppl
   }, new Map<string, SupplierExcelRow[]>());
 }
 
+function aggregateRowsAcrossOrderDates(rows: SupplierExcelRow[]): SupplierExcelRow[] {
+  const aggregated = new Map<string, SupplierExcelRow>();
+
+  for (const row of rows) {
+    const key = JSON.stringify([
+      row.supplierName,
+      row.branchName,
+      row.address,
+      row.phone,
+      row.productCode,
+      row.productName,
+      row.spec,
+    ]);
+    const existing = aggregated.get(key);
+
+    if (existing) {
+      existing.quantity += row.quantity;
+      continue;
+    }
+
+    aggregated.set(key, { ...row });
+  }
+
+  return Array.from(aggregated.values());
+}
+
 export async function createSupplierWorkbook(rows: SupplierExcelRow[]): Promise<Uint8Array> {
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet("발주서");
@@ -48,7 +75,7 @@ export async function createSupplierWorkbook(rows: SupplierExcelRow[]): Promise<
     { header: "수량", key: "quantity", width: 10 },
   ];
 
-  for (const row of rows) {
+  for (const row of aggregateRowsAcrossOrderDates(rows)) {
     worksheet.addRow({
       branchName: row.branchName,
       address: row.address,

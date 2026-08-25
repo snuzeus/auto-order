@@ -20,6 +20,7 @@ type OrderItemRow = {
 };
 
 type ClosedOrderRow = {
+  order_date: string;
   branches: BranchInfoRow | BranchInfoRow[] | null;
   order_items: OrderItemRow[] | null;
 };
@@ -39,6 +40,7 @@ function mapSupplierRows(orders: ClosedOrderRow[]): SupplierExcelRow[] {
       .filter((item) => (item.quantity ?? 0) > 0)
       .map((item) => ({
         supplierName: item.supplier_name?.trim() ?? "",
+        orderDate: order.order_date,
         branchName,
         address,
         phone,
@@ -66,12 +68,27 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = createServiceClient();
+  const { data: closingBatch, error: closingBatchError } = await supabase
+    .from("closing_batches")
+    .select("id")
+    .eq("order_date", parsed.data.orderDate)
+    .eq("status", "closed")
+    .maybeSingle();
+
+  if (closingBatchError) {
+    return jsonError("마감 묶음을 확인하지 못했습니다.", 500);
+  }
+
+  if (!closingBatch) {
+    return jsonError("다운로드할 마감 묶음이 없습니다.", 404);
+  }
+
   const { data, error } = await supabase
     .from("orders")
     .select(
-      "branches(name, delivery_address, phone), order_items(product_code, product_name, spec, supplier_name, quantity)",
+      "order_date, branches(name, delivery_address, phone), order_items(product_code, product_name, spec, supplier_name, quantity)",
     )
-    .eq("order_date", parsed.data.orderDate)
+    .eq("closing_batch_id", closingBatch.id)
     .eq("status", "closed");
 
   if (error) {

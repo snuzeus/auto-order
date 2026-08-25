@@ -20,6 +20,7 @@ type OrderItemRow = {
 };
 
 type ClosedOrderRow = {
+  order_date: string;
   branches: BranchInfoRow | BranchInfoRow[] | null;
   order_items: OrderItemRow[] | null;
 };
@@ -63,6 +64,7 @@ function mapSupplierRows(orders: ClosedOrderRow[]): SupplierExcelRow[] {
       .filter((item) => (item.quantity ?? 0) > 0)
       .map((item) => ({
         supplierName: item.supplier_name?.trim() ?? "",
+        orderDate: order.order_date,
         branchName,
         address,
         phone,
@@ -158,6 +160,7 @@ async function sendResendEmail(params: {
 
 async function logSupplierEmail(
   supabase: SupabaseClient,
+  closingBatchId: string,
   row: {
     order_date: string;
     supplier_name: string;
@@ -167,7 +170,10 @@ async function logSupplierEmail(
     provider_message_id?: string | null;
   },
 ) {
-  const { error } = await supabase.from("supplier_email_logs").insert(row);
+  const { error } = await supabase.from("supplier_email_logs").insert({
+    ...row,
+    closing_batch_id: closingBatchId,
+  });
 
   if (error) {
     console.error("[supplier-email-log]", error.message, row);
@@ -176,7 +182,8 @@ async function logSupplierEmail(
 
 export async function sendSupplierOrderEmails(
   supabase: SupabaseClient,
-  orderDate: string,
+  closingBatchId: string,
+  closingDate: string,
   options: SupplierEmailOptions = {},
 ): Promise<SupplierEmailResult> {
   const result: SupplierEmailResult = {
@@ -187,8 +194,8 @@ export async function sendSupplierOrderEmails(
   const { apiKey, from } = getEmailEnv();
 
   if (!apiKey || !from) {
-    await logSupplierEmail(supabase, {
-      order_date: orderDate,
+    await logSupplierEmail(supabase, closingBatchId, {
+      order_date: closingDate,
       supplier_name: "all",
       email: null,
       status: "skipped",
@@ -204,14 +211,14 @@ export async function sendSupplierOrderEmails(
   const { data: orders, error: ordersError } = await supabase
     .from("orders")
     .select(
-      "branches(name, delivery_address, phone), order_items(product_code, product_name, spec, supplier_name, quantity)",
+      "order_date, branches(name, delivery_address, phone), order_items(product_code, product_name, spec, supplier_name, quantity)",
     )
-    .eq("order_date", orderDate)
+    .eq("closing_batch_id", closingBatchId)
     .eq("status", "closed");
 
   if (ordersError) {
-    await logSupplierEmail(supabase, {
-      order_date: orderDate,
+    await logSupplierEmail(supabase, closingBatchId, {
+      order_date: closingDate,
       supplier_name: "all",
       email: null,
       status: "failed",
@@ -240,8 +247,8 @@ export async function sendSupplierOrderEmails(
   }
 
   if (groupedRows.size === 0) {
-    await logSupplierEmail(supabase, {
-      order_date: orderDate,
+    await logSupplierEmail(supabase, closingBatchId, {
+      order_date: closingDate,
       supplier_name: "all",
       email: null,
       status: "skipped",
@@ -260,8 +267,8 @@ export async function sendSupplierOrderEmails(
     .eq("is_active", true);
 
   if (suppliersError) {
-    await logSupplierEmail(supabase, {
-      order_date: orderDate,
+    await logSupplierEmail(supabase, closingBatchId, {
+      order_date: closingDate,
       supplier_name: "all",
       email: null,
       status: "failed",
@@ -293,8 +300,8 @@ export async function sendSupplierOrderEmails(
     const email = emailBySupplier.get(normalizeSupplierName(supplierName)) ?? "";
 
     if (!email) {
-      await logSupplierEmail(supabase, {
-        order_date: orderDate,
+      await logSupplierEmail(supabase, closingBatchId, {
+        order_date: closingDate,
         supplier_name: supplierName,
         email: null,
         status: "skipped",
@@ -320,11 +327,11 @@ export async function sendSupplierOrderEmails(
         from,
         to: email,
         supplierName,
-        orderDate,
+        orderDate: closingDate,
         attachment: workbook,
       });
-      await logSupplierEmail(supabase, {
-        order_date: orderDate,
+      await logSupplierEmail(supabase, closingBatchId, {
+        order_date: closingDate,
         supplier_name: supplierName,
         email,
         status: "sent",
@@ -333,8 +340,8 @@ export async function sendSupplierOrderEmails(
       result.sent += 1;
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Email delivery failed.";
-      await logSupplierEmail(supabase, {
-        order_date: orderDate,
+      await logSupplierEmail(supabase, closingBatchId, {
+        order_date: closingDate,
         supplier_name: supplierName,
         email,
         status: "failed",

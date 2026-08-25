@@ -13,6 +13,8 @@ describe("supplier email retry route", () => {
     expect(source).toContain("requireAdmin()");
     expect(source).toContain('.eq("status", "failed")');
     expect(source).toContain('.eq("status", "closed")');
-    expect(source).toContain("sendSupplierOrderEmails(supabase, orderDate, { supplierName })");
+    expect(source).toContain('.eq("closing_batch_id", closingBatch.id)');
+    expect(source).toContain("closingBatch.id,");
+    expect(source).toContain("{ supplierName },");
   });
 });
