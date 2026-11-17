@@ -54,6 +54,11 @@ export const submitOrderSchema = z.object({
   items: z.array(orderItemDraftSchema),
 });
 
+export const orderQuerySchema = z.object({
+  branchId: z.string().uuid(),
+  orderDate: ymdDateSchema,
+});
+
 export const closeDateSchema = z.object({
   orderDate: ymdDateSchema,
 });

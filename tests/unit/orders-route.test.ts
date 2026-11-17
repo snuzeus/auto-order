@@ -115,6 +115,13 @@ describe("POST /api/orders", () => {
     ]);
   });
 
+  it("returns 400 for a malformed order lookup without querying the database", async () => {
+    const response = await GET(createGetOrderRequest("not-a-uuid", "2026-06-23") as never);
+
+    expect(response.status).toBe(400);
+    expect(maybeSingleMock).not.toHaveBeenCalled();
+  });
+
   it("returns 400 without calling the RPC when all items are filtered out", async () => {
     const response = await POST(
       createOrderRequest({

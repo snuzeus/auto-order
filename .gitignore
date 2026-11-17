@@ -6,3 +6,13 @@ node_modules/
 .dev-server.port
 dev-server.log
 dev-server.err.log
+.next-stale-*/
+.dev-server*.log
+*.tsbuildinfo
+
+# 실제 거래처·상품 데이터와 사내 문서는 공개 저장소에 올리지 않는다.
+*.xlsx
+*.xls
+*.XLS
+/설명서/
+/테스트데이터.png
