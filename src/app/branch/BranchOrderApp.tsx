@@ -8,6 +8,7 @@ import {
   shouldPersistBranchDraft,
 } from "@/lib/domain/branch-order-draft";
 import { upsertOrderItem } from "@/lib/domain/branch-order-state";
+import { seoulYmd } from "@/lib/domain/order-date";
 import { calculateOrderTotals } from "@/lib/domain/order-totals";
 import type { Branch, OrderItemDraft, OrderStatus, Product } from "@/lib/types";
 
@@ -38,13 +39,11 @@ const BRANCH_STORAGE_KEY = "auto-order-branch-id";
 const FOCUS_VISIBLE_CLASS =
   "focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2";
 
-function todayYmd(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = `${now.getMonth() + 1}`.padStart(2, "0");
-  const date = `${now.getDate()}`.padStart(2, "0");
+const SEARCH_DEBOUNCE_MS = 250;
 
-  return `${year}-${month}-${date}`;
+// 서버는 한국 시간 기준 "오늘" 주문만 받으므로, 기기 시간대와 무관하게 같은 기준을 쓴다.
+function todayYmd(): string {
+  return seoulYmd();
 }
 
 function draftStorageKey(branchId: string, orderDate: string): string {
@@ -309,9 +308,15 @@ export default function BranchOrderApp() {
       }
     }
 
-    searchProducts();
+    // 글자를 입력할 때마다 서버를 호출하지 않도록 입력이 멈춘 뒤에 검색한다.
+    // 대기 중에도 "검색 결과 없음"이 잠깐 보이지 않도록 먼저 로딩 상태로 둔다.
+    setSearchLoading(true);
+    const timer = window.setTimeout(searchProducts, SEARCH_DEBOUNCE_MS);
 
-    return () => controller.abort();
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
   }, [query]);
 
   const selectedBranch = branches.find((branch) => branch.id === selectedBranchId) ?? null;

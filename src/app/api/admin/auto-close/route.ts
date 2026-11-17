@@ -1,3 +1,5 @@
+import { createHash, timingSafeEqual } from "node:crypto";
+
 import { NextRequest, NextResponse } from "next/server";
 
 import { sendSupplierOrderEmails } from "@/lib/email/supplier-order-email";
@@ -5,6 +7,8 @@ import { cleanupOrdersBeforeYesterday } from "@/lib/orders/cleanup-old-orders";
 import { createServiceClient } from "@/lib/supabase/service";
 
 export const dynamic = "force-dynamic";
+// 납품처별 메일을 순차 발송하므로 기본 실행 시간(짧은 플랜은 10초)을 넘길 수 있다.
+export const maxDuration = 60;
 
 type ClosingSettingsRow = {
   mode: "manual" | "auto_14";
@@ -29,6 +33,13 @@ function todayInSeoul(): string {
   return formatter.format(new Date());
 }
 
+function isSameSecret(received: string, expected: string): boolean {
+  const receivedHash = createHash("sha256").update(received).digest();
+  const expectedHash = createHash("sha256").update(expected).digest();
+
+  return timingSafeEqual(receivedHash, expectedHash);
+}
+
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
 }
@@ -43,7 +54,7 @@ export async function GET(request: NextRequest) {
     return jsonError("자동 마감 보안 설정이 없습니다.", 500);
   }
 
-  if (bearerToken !== expectedSecret) {
+  if (!isSameSecret(bearerToken, expectedSecret)) {
     logAutoClose("unauthorized", {
       hasAuthorizationHeader: authHeader !== "",
     });

@@ -6,7 +6,7 @@ import {
   hasInvalidSubmittedRegisteredProduct,
 } from "@/lib/domain/branch-order-draft";
 import { isTodayInSeoul } from "@/lib/domain/order-date";
-import { submitOrderSchema } from "@/lib/schemas";
+import { orderQuerySchema, submitOrderSchema } from "@/lib/schemas";
 import { createServiceClient } from "@/lib/supabase/service";
 import type { OrderItemDraft, OrderStatus } from "@/lib/types";
 
@@ -247,6 +247,10 @@ export async function GET(request: NextRequest) {
 
   if (!branchId || !orderDate) {
     return jsonError(ORDER_ERROR_MESSAGES.queryMissing, 400);
+  }
+
+  if (!orderQuerySchema.safeParse({ branchId, orderDate }).success) {
+    return jsonError(ORDER_ERROR_MESSAGES.invalidInput, 400);
   }
 
   const supabase = createServiceClient();

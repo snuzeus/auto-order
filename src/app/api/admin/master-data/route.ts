@@ -59,6 +59,39 @@ type WorksheetLike = {
 type SheetRow = unknown[];
 
 const MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024;
+const PRODUCT_PAGE_SIZE = 1000;
+const MAX_PRODUCT_PAGES = 100;
+
+// Supabase(PostgREST)는 한 번에 최대 1000행만 돌려주므로, 상품이 1000개를 넘으면
+// 납품처별 상품 수가 적게 집계된다. 페이지 단위로 끝까지 읽는다.
+async function loadActiveProductSuppliers(
+  supabase: ReturnType<typeof createServiceClient>,
+): Promise<{ data: ProductSupplierCountRow[]; error: unknown }> {
+  const rows: ProductSupplierCountRow[] = [];
+
+  for (let page = 0; page < MAX_PRODUCT_PAGES; page += 1) {
+    const from = page * PRODUCT_PAGE_SIZE;
+    const { data, error } = await supabase
+      .from("products")
+      .select("supplier_name")
+      .eq("is_active", true)
+      .order("id", { ascending: true })
+      .range(from, from + PRODUCT_PAGE_SIZE - 1);
+
+    if (error) {
+      return { data: [], error };
+    }
+
+    const pageRows = (data ?? []) as ProductSupplierCountRow[];
+    rows.push(...pageRows);
+
+    if (pageRows.length < PRODUCT_PAGE_SIZE) {
+      break;
+    }
+  }
+
+  return { data: rows, error: null };
+}
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
@@ -355,7 +388,7 @@ export async function GET() {
           "id, business_registration_number, name, representative_name, phone, email, address, is_active",
         )
         .order("name", { ascending: true }),
-      supabase.from("products").select("supplier_name").eq("is_active", true),
+      loadActiveProductSuppliers(supabase),
     ]);
 
   if (productsError) {

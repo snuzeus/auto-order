@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { requireAdmin } from "@/lib/auth/admin";
 import { sendSupplierOrderEmails } from "@/lib/email/supplier-order-email";
+import { seoulYmd } from "@/lib/domain/order-date";
 import { cleanupOrdersBeforeYesterday } from "@/lib/orders/cleanup-old-orders";
 import { closeDateSchema } from "@/lib/schemas";
 import { createServiceClient } from "@/lib/supabase/service";
@@ -9,6 +10,9 @@ import { createServiceClient } from "@/lib/supabase/service";
 type CloseOrdersRpcRow = {
   close_orders_through_date: string | null;
 };
+
+// 납품처별 메일을 순차 발송하므로 기본 실행 시간(짧은 플랜은 10초)을 넘길 수 있다.
+export const maxDuration = 60;
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
@@ -48,6 +52,11 @@ export async function POST(request: NextRequest) {
 
   if (!parsed.success) {
     return jsonError("마감 날짜를 다시 확인해 주세요.", 400);
+  }
+
+  // 미래 날짜로 마감하면 그 날짜가 됐을 때 지사가 주문을 제출할 수 없게 된다.
+  if (parsed.data.orderDate > seoulYmd()) {
+    return jsonError("오늘 이후 날짜는 마감할 수 없습니다.", 400);
   }
 
   const supabase = createServiceClient();

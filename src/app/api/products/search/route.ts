@@ -19,6 +19,20 @@ function escapeForIlike(value: string): string {
   return value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
 }
 
+const MAX_QUERY_LENGTH = 100;
+const OR_FILTER_BREAKING_CHARS = /[,()"]/;
+
+// PostgREST의 or() 필터는 쉼표·괄호를 구분자로 해석하므로,
+// 해당 문자가 포함된 값은 큰따옴표로 감싸야 검색이 실패하지 않는다.
+// 그 외 검색어는 기존과 동일한 요청을 보낸다.
+function quoteForOrFilter(value: string): string {
+  if (!OR_FILTER_BREAKING_CHARS.test(value)) {
+    return value;
+  }
+
+  return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+}
+
 function formatDashedBarcodePrefix(value: string): string | null {
   const digits = value.replaceAll(/\D/g, "");
 
@@ -42,7 +56,11 @@ function buildCodeSearchFilter(query: string): string {
   }
 
   return Array.from(searchPrefixes)
-    .flatMap((prefix) => [`barcode.ilike.${prefix}%`, `product_code.ilike.${prefix}%`])
+    .flatMap((prefix) => {
+      const pattern = quoteForOrFilter(`${prefix}%`);
+
+      return [`barcode.ilike.${pattern}`, `product_code.ilike.${pattern}`];
+    })
     .join(",");
 }
 
@@ -71,7 +89,7 @@ function searchError() {
 }
 
 export async function GET(request: NextRequest) {
-  const query = request.nextUrl.searchParams.get("q")?.trim() ?? "";
+  const query = (request.nextUrl.searchParams.get("q")?.trim() ?? "").slice(0, MAX_QUERY_LENGTH);
 
   if (!query) {
     return NextResponse.json({ products: [] });

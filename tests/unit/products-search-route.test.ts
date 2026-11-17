@@ -62,6 +62,24 @@ describe("GET /api/products/search", () => {
     );
   });
 
+  it("quotes PostgREST reserved characters so names with brackets or commas still search", async () => {
+    fromMock
+      .mockReturnValueOnce(createBuilder({ data: [], error: null }))
+      .mockReturnValueOnce(createBuilder({ data: [], error: null }))
+      .mockReturnValueOnce(createBuilder({ data: [], error: null }));
+
+    const response = await GET(
+      new NextRequest(
+        `http://localhost/api/products/search?q=${encodeURIComponent("샴푸(대용량),리필")}`,
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(queryBuilders[1].or).toHaveBeenCalledWith(
+      'barcode.ilike."샴푸(대용량),리필%",product_code.ilike."샴푸(대용량),리필%"',
+    );
+  });
+
   it("searches dashed barcodes when the query is typed without dashes", async () => {
     fromMock
       .mockReturnValueOnce(createBuilder({ data: [], error: null }))
