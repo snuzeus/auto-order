@@ -20,12 +20,13 @@ function escapeForIlike(value: string): string {
 }
 
 const MAX_QUERY_LENGTH = 100;
-const POSTGREST_RESERVED_CHARS = /[,.:()"\\\s]/;
+const OR_FILTER_BREAKING_CHARS = /[,()"]/;
 
-// PostgREST의 or() 필터는 쉼표·괄호 등을 구분자로 해석하므로,
+// PostgREST의 or() 필터는 쉼표·괄호를 구분자로 해석하므로,
 // 해당 문자가 포함된 값은 큰따옴표로 감싸야 검색이 실패하지 않는다.
+// 그 외 검색어는 기존과 동일한 요청을 보낸다.
 function quoteForOrFilter(value: string): string {
-  if (!POSTGREST_RESERVED_CHARS.test(value)) {
+  if (!OR_FILTER_BREAKING_CHARS.test(value)) {
     return value;
   }
 
